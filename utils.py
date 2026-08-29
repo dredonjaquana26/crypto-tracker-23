@@ -1,50 +1,48 @@
-import json
-from collections import defaultdict, Counter
-from typing import List, Dict, Any
+import hashlib
+from typing import Dict, List
 
-def handle_crypto_data(raw_json: str) -> Dict[str, Any]:
-    data = json.loads(raw_json)
-    if not isinstance(data, list):
-        data = [data]
-    processed = []
-    for coin in data:
-        price_str = str(coin.get('price', 0))
-        digit_count = Counter(price_str)
-        volatility = sum(int(d) for d in price_str if d.isdigit()) / max(len(price_str), 1)
-        unique_id = hash(coin.get('symbol', '')) % 10000
-        entry = {
-            'symbol': coin.get('symbol', 'unknown'),
-            'price': float(coin.get('price', 0)),
-            'volume': float(coin.get('volume', 0)),
-            'digit_freq': dict(digit_count),
-            'volatility_score': round(volatility, 2),
-            'unique_id': unique_id
-        }
-        processed.append(entry)
-    grouped = defaultdict(list)
-    for p in processed:
-        key = p['symbol'][0].upper() if p['symbol'] else 'Z'
-        grouped[key].append(p)
-    avg_price = sum(p['price'] for p in processed) / len(processed) if processed else 0
-    return {
-        'processed_data': processed,
-        'grouped_by_letter': dict(grouped),
-        'total_coins': len(processed),
-        'avg_price': round(avg_price, 2)
-    }
+def _get_deterministic_variation(symbol: str) -> float:
+    digest = hashlib.sha256(symbol.encode('utf-8')).digest()
+    val = int.from_bytes(digest[:4], 'little') / (2**32)
+    return (val - 0.5) * 2
 
-def filter_high_volatility(data: Dict[str, Any], threshold: float = 5.0) -> List[Dict]:
-    if 'processed_data' not in data:
-        return []
-    return [coin for coin in data['processed_data'] if coin.get('volatility_score', 0) > threshold]
+def simulate_crypto_price(symbol: str, base: float = 50000.0) -> float:
+    variation = _get_deterministic_variation(symbol)
+    return base * (1 + variation * 0.05)
 
-def merge_crypto_datasets(dataset1: Dict[str, Any], dataset2: Dict[str, Any]) -> Dict[str, Any]:
-    symbols1 = {d['symbol'] for d in dataset1.get('processed_data', [])}
-    symbols2 = {d['symbol'] for d in dataset2.get('processed_data', [])}
-    common = symbols1.intersection(symbols2)
-    return {
-        'common_symbols': list(common),
-        'total_unique': len(symbols1.union(symbols2)),
-        'only_in_first': list(symbols1 - symbols2),
-        'only_in_second': list(symbols2 - symbols1)
-    }
+def calculate_percentage_change(old_price: float, new_price: float) -> float:
+    if old_price == 0:
+        return 0.0
+    return ((new_price - old_price) / old_price) * 100
+
+def batch_convert(amounts: List[float], rates: Dict[str, float], from_symbol: str, to_symbol: str) -> List[float]:
+    if from_symbol not in rates or to_symbol not in rates:
+        return [0.0] * len(amounts)
+    rate = rates[to_symbol] / rates[from_symbol]
+    return [amt * rate for amt in amounts]
+
+def portfolio_roi(holdings: Dict[str, float], current_prices: Dict[str, float], initial_prices: Dict[str, float]) -> Dict[str, float]:
+    rois = {}
+    for symbol, amount in holdings.items():
+        if symbol in current_prices and symbol in initial_prices and initial_prices[symbol] > 0:
+            initial_value = amount * initial_prices[symbol]
+            current_value = amount * current_prices[symbol]
+            rois[symbol] = calculate_percentage_change(initial_value, current_value)
+    return rois
+
+def unusual_aggregate(prices: List[float]) -> float:
+    if not prices:
+        return 0.0
+    product = 1.0
+    for p in prices:
+        product *= p
+    return product ** (1 / len(prices))
+
+def filter_by_change(prices: Dict[str, float], previous: Dict[str, float], min_change: float = 5.0) -> List[str]:
+    result = []
+    for symbol, price in prices.items():
+        if symbol in previous:
+            change = calculate_percentage_change(previous[symbol], price)
+            if change >= min_change:
+                result.append(symbol)
+    return result
