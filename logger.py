@@ -1,75 +1,76 @@
 import logging
-import json
-import hashlib
-import time
-import random
-from datetime import datetime
-class CryptoTrackerLogger:
-    def __init__(self, name='crypto-tracker-23', level=logging.INFO):
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(level)
-        if not self.logger.handlers:
-            ch = logging.StreamHandler()
-            ch.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-            self.logger.addHandler(ch)
-        self.error_registry = {}
-    def _generate_error_id(self, msg):
-        timestamp = str(int(time.time()))
-        combined = f"{timestamp}:{msg}"
-        return hashlib.sha256(combined.encode()).hexdigest()[:12]
-    def log_info(self, message, extra=None):
-        self.logger.info(self._format_message(message, extra))
-    def log_warning(self, message, extra=None):
-        self.logger.warning(self._format_message(message, extra))
-    def log_error(self, message, extra=None):
-        error_id = self._generate_error_id(message)
-        formatted = self._format_message(f"[{error_id}] {message}", extra)
-        self.logger.error(formatted)
-        self._update_error_stats(error_id)
-    def _format_message(self, message, extra):
-        if extra:
-            return f"{message} | {json.dumps(extra, default=str)}"
-        return message
-    def _update_error_stats(self, error_id):
-        if error_id not in self.error_registry:
-            self.error_registry[error_id] = {'count': 0, 'first_seen': datetime.now()}
-        self.error_registry[error_id]['count'] += 1
-        if self.error_registry[error_id]['count'] > 3:
-            self.logger.critical(f"High frequency error {error_id} - investigate crypto data source")
-    def handle_edge_case(self, edge_type, details):
-        if edge_type == 'zero_price':
-            self.log_warning('Zero price edge case handled', details)
-            return 0
-        elif edge_type == 'negative_balance':
-            self.log_error('Negative balance detected', details)
-            return 0
-        elif edge_type == 'invalid_symbol':
-            self.log_error('Invalid crypto symbol', details)
-            return None
-        elif edge_type == 'rate_limit':
-            self.log_warning('API rate limit hit, backing off', details)
-            time.sleep(random.uniform(1, 5))
-            return 'retry'
-        elif edge_type == 'parse_failure':
-            self.log_error('JSON parse failure in response', {'raw': str(details)[:50]})
-            return {}
-        else:
-            self.log_error('Unknown edge case', {'type': edge_type, 'details': details})
-            return None
-    def wrap_with_error_handling(self, func):
-        def wrapper(*args, **kwargs):
+from logging.handlers import RotatingFileHandler
+import sys
+import os
+from pathlib import Path
+
+def create_crypto_logger(name: str = "crypto_tracker_23", log_dir: str = "logs") -> logging.Logger:
+    """Create and configure a rotating logger with custom crypto-themed formatting.
+    
+    Uses RotatingFileHandler for size-based rotation. Includes unusual custom
+    console handler with emoji indicators for quick visual scanning of logs.
+    """
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    log_path = os.path.join(log_dir, f"{name}.log")
+    
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    
+    # Prevent duplicate handlers
+    logger.handlers = []
+    
+    # Main rotating file handler - 10MB files, keep 5 backups
+    max_bytes = 10 * 1024 * 1024
+    file_handler = RotatingFileHandler(
+        log_path,
+        maxBytes=max_bytes,
+        backupCount=5,
+        encoding="utf-8"
+    )
+    file_formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)-8s | %(module)s:%(lineno)d | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    file_handler.setFormatter(file_formatter)
+    file_handler.setLevel(logging.DEBUG)
+    logger.addHandler(file_handler)
+    
+    # Unusual approach: Custom stream handler with crypto emojis
+    class EmojiCryptoHandler(logging.StreamHandler):
+        EMOJI_MAP = {
+            logging.DEBUG: "🔍",
+            logging.INFO: "💰",
+            logging.WARNING: "📉",
+            logging.ERROR: "🚨",
+            logging.CRITICAL: "💥"
+        }
+        
+        def emit(self, record: logging.LogRecord) -> None:
             try:
-                return func(*args, **kwargs)
-            except ZeroDivisionError:
-                self.log_error('Division by zero in calculation', {'func': func.__name__, 'args': args})
-                return 0.0
-            except KeyError as ke:
-                self.log_error('Missing data key', {'key': str(ke), 'func': func.__name__})
-                return None
-            except (ConnectionError, TimeoutError) as net_err:
-                self.log_error('Network issue', {'error': str(net_err)})
-                return None
-            except Exception as ex:
-                self.log_error('Unhandled exception', {'type': type(ex).__name__, 'msg': str(ex)})
-                return None
-        return wrapper
+                emoji = self.EMOJI_MAP.get(record.levelno, "📝")
+                message = self.format(record)
+                self.stream.write(f"{emoji} {message}\n")
+                self.flush()
+            except Exception:
+                self.handleError(record)
+    
+    console_handler = EmojiCryptoHandler(sys.stdout)
+    console_formatter = logging.Formatter(
+        fmt="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%H:%M:%S"
+    )
+    console_handler.setFormatter(console_formatter)
+    console_handler.setLevel(logging.INFO)
+    logger.addHandler(console_handler)
+    
+    return logger
+
+# Additional helper for crypto specific logging
+def log_price_update(logger: logging.Logger, symbol: str, price: float, change_pct: float) -> None:
+    """Log a crypto price update with appropriate level."""
+    if abs(change_pct) > 5:
+        logger.warning(f"{symbol} significant move: ${price:.2f} ({change_pct:+.2f}%)")
+    elif change_pct > 0:
+        logger.info(f"{symbol} price: ${price:.2f} ({change_pct:+.2f}%)")
+    else:
+        logger.info(f"{symbol} price: ${price:.2f} ({change_pct:+.2f}%)")
