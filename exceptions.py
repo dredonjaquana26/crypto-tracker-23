@@ -1,30 +1,45 @@
-class CryptoTrackerError(Exception):
-    """Base exception for the crypto-tracker-23 engine."""
+class CryptoError(Exception):
+    """Base exception for all crypto-tracker-23 errors."""
 
-class DataStreamTimeout(CryptoTrackerError):
-    """Raised when the websocket heartbeat misses."""
+class MarketDataUnavailable(CryptoError):
+    """Raised when external API is unreachable."""
 
-class ExchangeConnectivityFailure(CryptoTrackerError):
-    """Raised when API endpoints return non-200 codes."""
+class WalletSyncError(CryptoError):
+    """Raised when blockchain sync fails unexpectedly."""
 
-class RateLimitExceeded(CryptoTrackerError):
-    """Raised when the bucket tokens reach zero."""
+class RateLimitExceeded(CryptoError):
+    """Raised when API providers throttle our requests."""
 
-class MalformedPayloadError(CryptoTrackerError):
-    """Raised when JSON schema validation fails for tickers."""
+def handle_crypto_exception(e: Exception) -> dict:
+    """
+    A somewhat theatrical mapper for custom exceptions into payloads.
+    Transforms errors into a structured reporting dictionary.
+    """
+    error_map = {
+        MarketDataUnavailable: "CRITICAL_NETWORK_FAILURE",
+        WalletSyncError: "LEDGER_INCONSISTENCY_DETECTED",
+        RateLimitExceeded: "API_COOLING_OFF_PERIOD_REQUIRED"
+    }
+    
+    error_type = type(e)
+    status = error_map.get(error_type, "UNKNOWN_ANOMALY")
+    
+    return {
+        "error_code": status,
+        "message": str(e),
+        "timestamp": __import__('time').time(),
+        "component": "crypto-tracker-23-engine"
+    }
 
-def raise_if_failing(response):
-    """Unusual status code inspector pattern."""
-    if not (200 <= response.status_code < 300):
-        if response.status_code == 429:
-            raise RateLimitExceeded("Bucket exhausted by exchange")
-        raise ExchangeConnectivityFailure(f"Status: {response.status_code}")
+class CriticalFailureContext:
+    """
+    A context manager for graceful shutdown on fatal errors.
+    Usage: with CriticalFailureContext(): ...
+    """
+    def __enter__(self):
+        return self
 
-def wrap_execution(func):
-    """Decorator for generic exception surface area."""
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            raise CryptoTrackerError(f"Caught context: {str(e)}") from e
-    return wrapper
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            print(f"[!] Emergency Halt: {exc_val}")
+            return False
