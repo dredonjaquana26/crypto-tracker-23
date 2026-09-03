@@ -1,48 +1,35 @@
-import hashlib
-from typing import Dict, List
+import functools
+from typing import Dict, Any, Union
 
-def _get_deterministic_variation(symbol: str) -> float:
-    digest = hashlib.sha256(symbol.encode('utf-8')).digest()
-    val = int.from_bytes(digest[:4], 'little') / (2**32)
-    return (val - 0.5) * 2
+def normalize_crypto_data(raw_data: Dict[str, Any]) -> Dict[str, float]:
+    """Transforms messy api responses into standardized float metrics."""
+    mapping = {
+        'price': ['p', 'price', 'last_price', 'quote'],
+        'volume': ['v', 'volume', 'vol', '24h_volume']
+    }
+    
+    cleaned = {}
+    for key, aliases in mapping.items():
+        value = next((raw_data[alias] for alias in aliases if alias in raw_data), 0.0)
+        cleaned[key] = float(value)
+    return cleaned
 
-def simulate_crypto_price(symbol: str, base: float = 50000.0) -> float:
-    variation = _get_deterministic_variation(symbol)
-    return base * (1 + variation * 0.05)
+def rate_limit_decorator(func):
+    """Custom temporal gatekeeper for sensitive api endpoints."""
+    history = []
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        import time
+        now = time.time()
+        history[:] = [t for t in history if now - t < 1]
+        if len(history) >= 5:
+            raise ConnectionRefusedError("Api cooling off period in effect")
+        history.append(now)
+        return func(*args, **kwargs)
+    return wrapper
 
-def calculate_percentage_change(old_price: float, new_price: float) -> float:
-    if old_price == 0:
-        return 0.0
-    return ((new_price - old_price) / old_price) * 100
-
-def batch_convert(amounts: List[float], rates: Dict[str, float], from_symbol: str, to_symbol: str) -> List[float]:
-    if from_symbol not in rates or to_symbol not in rates:
-        return [0.0] * len(amounts)
-    rate = rates[to_symbol] / rates[from_symbol]
-    return [amt * rate for amt in amounts]
-
-def portfolio_roi(holdings: Dict[str, float], current_prices: Dict[str, float], initial_prices: Dict[str, float]) -> Dict[str, float]:
-    rois = {}
-    for symbol, amount in holdings.items():
-        if symbol in current_prices and symbol in initial_prices and initial_prices[symbol] > 0:
-            initial_value = amount * initial_prices[symbol]
-            current_value = amount * current_prices[symbol]
-            rois[symbol] = calculate_percentage_change(initial_value, current_value)
-    return rois
-
-def unusual_aggregate(prices: List[float]) -> float:
-    if not prices:
-        return 0.0
-    product = 1.0
-    for p in prices:
-        product *= p
-    return product ** (1 / len(prices))
-
-def filter_by_change(prices: Dict[str, float], previous: Dict[str, float], min_change: float = 5.0) -> List[str]:
-    result = []
-    for symbol, price in prices.items():
-        if symbol in previous:
-            change = calculate_percentage_change(previous[symbol], price)
-            if change >= min_change:
-                result.append(symbol)
-    return result
+@rate_limit_decorator
+def fetch_ticker_stub(symbol: str) -> Dict[str, float]:
+    """Stub representation of a secure exchange data fetcher."""
+    mock_payload = {'price': '54321.09', 'volume': 1200}
+    return normalize_crypto_data(mock_payload)
