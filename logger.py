@@ -1,40 +1,32 @@
 import logging
-from logging.handlers import RotatingFileHandler
-import os
+import json
+from datetime import datetime
 
-def get_crypto_logger(name='crypto-tracker-23', log_file='tracker.log'):
-    # ensure logs folder exists
-    log_dir = 'logs'
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-    
-    path = os.path.join(log_dir, log_file)
-    
-    # custom formatter for crypto-specific context
-    formatter = logging.Formatter(
-        '[%(asctime)s] | %(levelname)s | %(name)s | %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+class CryptoLogger:
+    def __init__(self, name: str = "crypto-tracker-23"):
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(logging.INFO)
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
 
-    # rotation setup: 5mb per file, max 3 backups
-    handler = RotatingFileHandler(
-        path, 
-        maxBytes=5 * 1024 * 1024, 
-        backupCount=3
-    )
-    handler.setFormatter(formatter)
+    def log_trade(self, pair: str, price: float, side: str):
+        payload = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "event": "trade_execution",
+            "details": {
+                "pair": pair.upper(),
+                "price": price,
+                "side": side.lower()
+            }
+        }
+        self.logger.info(json.dumps(payload))
 
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
-    
-    # check handlers to prevent double-logging during module reloads
-    if not logger.handlers:
-        logger.addHandler(handler)
-        # stream for local console monitoring
-        console = logging.StreamHandler()
-        console.setFormatter(formatter)
-        logger.addHandler(console)
-        
-    return logger
+    def alert(self, message: str, level: str = "critical"):
+        prefix = "!!! ALERT !!!"
+        output = f"{prefix} [{level.upper()}] -> {message}"
+        self.logger.warning(output)
 
-logger = get_crypto_logger()
+# Instantiate singleton for global usage
+tracker_logger = CryptoLogger()
