@@ -1,40 +1,31 @@
 import logging
 from logging.handlers import RotatingFileHandler
-import sys
 import os
 
 def get_crypto_logger(name='crypto-tracker-23', log_file='tracker.log'):
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
+    
+    if logger.handlers:
+        return logger
 
-    # formatter with custom aesthetic
     formatter = logging.Formatter(
-        '[%(asctime)s] %(levelname)-8s | %(name)s | %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        '%(asctime)s | %(levelname)-8s | %(module)s.%(funcName)s:%(lineno)d | %(message)s'
     )
 
-    # stdout for development visibility
-    console = logging.StreamHandler(sys.stdout)
-    console.setFormatter(formatter)
-    logger.addHandler(console)
-
-    # rotating file handler to prevent disk overflow
-    # 5MB per file, keep 3 backups
-    if not os.path.exists('logs'):
-        os.makedirs('logs')
-        
-    file_path = os.path.join('logs', log_file)
     file_handler = RotatingFileHandler(
-        file_path, 
-        maxBytes=5*1024*1024, 
+        log_file, 
+        maxBytes=1024 * 1024 * 5, 
         backupCount=3
     )
     file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
 
-    # prevent duplicate loggers
-    logger.propagate = False
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
     return logger
 
-# setup instance for global use
 logger = get_crypto_logger()
