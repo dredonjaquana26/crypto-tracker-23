@@ -1,44 +1,42 @@
 import time
-import logging
 from functools import wraps
+from typing import Callable, Any, Dict
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger('crypto-tracker-23')
+class CryptoFormatter:
+    """Static utility for raw crypto data sanitization."""
+    @staticmethod
+    def clean_ticker(symbol: str) -> str:
+        return symbol.upper().strip().replace('/', '').replace('-', '')
 
-class CryptoCircuitBreaker:
-    def __init__(self, retries=3, backoff=2):
-        self.retries = retries
-        self.backoff = backoff
+    @staticmethod
+    def format_price(value: float, precision: int = 2) -> str:
+        return f"${value:,.{precision}f}"
 
-    def __call__(self, func):
+def rate_limit(interval: float):
+    """Decorator for API request throttling."""
+    def decorator(func: Callable):
+        last_called = [0.0]
         @wraps(func)
-        def wrapper(*args, **kwargs):
-            attempts = 0
-            while attempts < self.retries:
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    attempts += 1
-                    wait = self.backoff ** attempts
-                    logger.warning(f"Edge case hit: {e}. Retrying in {wait}s...")
-                    time.sleep(wait)
-            return None
+        def wrapper(*args, **kwargs) -> Any:
+            elapsed = time.time() - last_called[0]
+            if elapsed < interval:
+                time.sleep(interval - elapsed)
+            result = func(*args, **kwargs)
+            last_called[0] = time.time()
+            return result
         return wrapper
+    return decorator
 
-def sanitize_ticker(ticker):
-    if not isinstance(ticker, str) or len(ticker) > 10:
-        logger.error("Malformed ticker data detected")
-        return "BTC"
-    return ticker.upper().strip()
+def batch_process(data: list, size: int = 10):
+    """Generator for splitting large data chunks."""
+    for i in range(0, len(data), size):
+        yield data[i:i + size]
 
-def safe_divide(a, b):
-    try:
-        return float(a) / float(b)
-    except (ZeroDivisionError, ValueError, TypeError):
-        logger.critical("Division failure: returning zeroed float")
-        return 0.0
-
-def validate_response(data):
-    if not data or not isinstance(data, dict):
-        raise ValueError("Empty or corrupt payload received")
-    return data
+def dict_deep_merge(base: Dict, patch: Dict) -> Dict:
+    """Recursive dictionary merge for configuration updates."""
+    for key, value in patch.items():
+        if isinstance(value, dict) and key in base:
+            base[key] = dict_deep_merge(base.get(key, {}), value)
+        else:
+            base[key] = value
+    return base
