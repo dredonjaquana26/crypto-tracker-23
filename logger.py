@@ -2,30 +2,39 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 
-def get_crypto_logger(name='crypto-tracker-23', log_file='crypto.log', max_bytes=1048576, backup_count=3):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+def get_crypto_logger(name='crypto-tracker-23', log_file='tracker.log'):
+    # ensure logs folder exists
+    log_dir = 'logs'
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
     
+    path = os.path.join(log_dir, log_file)
+    
+    # custom formatter for crypto-specific context
     formatter = logging.Formatter(
-        '%(asctime)s | %(levelname)-8s | [🚀 %(name)s] %(message)s',
+        '[%(asctime)s] | %(levelname)s | %(name)s | %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
-    # Console output for the terminal enthusiasts
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
-
-    # File rotation for the historical ledger
-    file_handler = RotatingFileHandler(
-        log_file, 
-        maxBytes=max_bytes, 
-        backupCount=backup_count
+    # rotation setup: 5mb per file, max 3 backups
+    handler = RotatingFileHandler(
+        path, 
+        maxBytes=5 * 1024 * 1024, 
+        backupCount=3
     )
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
     
+    # check handlers to prevent double-logging during module reloads
+    if not logger.handlers:
+        logger.addHandler(handler)
+        # stream for local console monitoring
+        console = logging.StreamHandler()
+        console.setFormatter(formatter)
+        logger.addHandler(console)
+        
     return logger
 
-# Instantiate the global tracker logger
-tracker_logger = get_crypto_logger()
+logger = get_crypto_logger()
