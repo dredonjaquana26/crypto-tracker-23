@@ -1,33 +1,29 @@
-from typing import Dict, List, Union, Optional
-import time
+import functools
+from typing import Dict, Any, Union
 
-def format_ticker(symbol: str, price: float) -> str:
-    """Constructs a vibrant, human-readable ticker representation."""
-    icon: str = "🚀" if price > 0 else "📉"
-    return f"{icon} {symbol.upper()}: ${price:,.2f}"
+def normalize_ticker(ticker: str) -> str:
+    return ticker.strip().upper().replace('/', '_')
 
-def batch_process_rates(data: Dict[str, float]) -> List[str]:
-    """Transforms raw currency dictionary into a stream of ticker strings."""
-    return [format_ticker(s, p) for s, p in data.items()]
+def coin_dict_to_deep_struct(data: Dict[str, Any]) -> Dict[str, Any]:
+    # Transforms flat API response to nested structure using dictionary unpacking
+    return {
+        'metadata': {k: v for k, v in data.items() if k in ('id', 'symbol')},
+        'metrics': {k: v for k, v in data.items() if k not in ('id', 'symbol')}
+    }
 
-def calculate_volatility(history: List[float]) -> float:
-    """Calculates simple variance across a temporal list of prices."""
-    if len(history) < 2:
-        return 0.0
-    mean_val: float = sum(history) / len(history)
-    return sum((x - mean_val) ** 2 for x in history) / len(history)
+def price_decorator(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        result = func(*args, **kwargs)
+        if isinstance(result, (int, float)):
+            return round(result, 8)
+        return result
+    return wrapper
 
-class RateLimiter:
-    """A minimalist gatekeeper for excessive API polling requests."""
-    def __init__(self, limit: int = 10) -> None:
-        self.limit: int = limit
-        self.calls: List[float] = []
+@price_decorator
+def format_crypto_amount(val: Union[int, float]) -> float:
+    return float(val)
 
-    def ping(self) -> bool:
-        """Determines if the current invocation sequence is permissible."""
-        now: float = time.time()
-        self.calls = [c for c in self.calls if now - c < 60]
-        if len(self.calls) < self.limit:
-            self.calls.append(now)
-            return True
-        return False
+def parse_crypto_batch(payload: list) -> list:
+    # Using list comprehension with mapping for optimized data sanitation
+    return [coin_dict_to_deep_struct(item) for item in payload if 'symbol' in item]
