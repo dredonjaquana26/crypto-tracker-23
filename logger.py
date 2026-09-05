@@ -1,32 +1,40 @@
 import logging
-import json
-from datetime import datetime
+from logging.handlers import RotatingFileHandler
+import sys
+import os
 
-class CryptoLogger:
-    def __init__(self, name: str = "crypto-tracker-23"):
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.INFO)
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
+def get_crypto_logger(name='crypto-tracker-23', log_file='tracker.log'):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
 
-    def log_trade(self, pair: str, price: float, side: str):
-        payload = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "event": "trade_execution",
-            "details": {
-                "pair": pair.upper(),
-                "price": price,
-                "side": side.lower()
-            }
-        }
-        self.logger.info(json.dumps(payload))
+    # formatter with custom aesthetic
+    formatter = logging.Formatter(
+        '[%(asctime)s] %(levelname)-8s | %(name)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
-    def alert(self, message: str, level: str = "critical"):
-        prefix = "!!! ALERT !!!"
-        output = f"{prefix} [{level.upper()}] -> {message}"
-        self.logger.warning(output)
+    # stdout for development visibility
+    console = logging.StreamHandler(sys.stdout)
+    console.setFormatter(formatter)
+    logger.addHandler(console)
 
-# Instantiate singleton for global usage
-tracker_logger = CryptoLogger()
+    # rotating file handler to prevent disk overflow
+    # 5MB per file, keep 3 backups
+    if not os.path.exists('logs'):
+        os.makedirs('logs')
+        
+    file_path = os.path.join('logs', log_file)
+    file_handler = RotatingFileHandler(
+        file_path, 
+        maxBytes=5*1024*1024, 
+        backupCount=3
+    )
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    # prevent duplicate loggers
+    logger.propagate = False
+    return logger
+
+# setup instance for global use
+logger = get_crypto_logger()
