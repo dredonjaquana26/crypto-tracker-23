@@ -1,63 +1,56 @@
-# Crypto Tracker 23
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+# crypto-tracker-23
 
-Crypto Tracker 23 is a lightweight, high-performance command-line interface tool designed for real-time cryptocurrency portfolio monitoring and market analysis. It connects directly to public exchange APIs to deliver low-latency price feeds and automated profit-and-loss calculations straight to your terminal.
+`crypto-tracker-23` is an asynchronous Python CLI tool designed to monitor real-time cryptocurrency prices, liquidity pools, and market trends across major exchanges. Built with `aiohttp` and `rich`, it delivers low-latency market updates directly to your terminal or outputs structured data for quantitative analysis pipelines.
 
 ## Features
 
-- **Live Price Streaming:** Fetches second-by-second ticker data and order book depth for major trading pairs using asynchronous HTTP requests.
-- **Automated Portfolio Valuation:** Calculates total portfolio value, daily gains/losses, and asset allocation percentages based on local CSV transaction logs.
-- **Custom Price Alerts:** Triggers desktop notifications or terminal sound alerts when specified threshold prices are breached.
-- **Historical CSV Export:** Dumps raw OHLCV (Open, High, Low, Close, Volume) data into structured CSV files for backtesting and technical analysis.
+- **Multi-Exchange Streaming:** Collect live price updates and order book snapshots from CoinGecko and Binance via WebSockets.
+- **Custom Threshold Alerts:** Trigger native OS notifications or Webhook payloads when assets breach specified price or volume targets.
+- **Gas Fee Monitoring:** Track real-time Ethereum and Polygon network gas costs alongside active trading pairs.
+- **Data Export:** Persist historical tick data directly to SQLite databases or formatted CSV files for backtesting.
 
 ## Installation
 
-Ensure you have Python 3.10 or higher installed on your system. 
+Clone the repository and install the dependencies in a virtual environment:
 
 ```bash
-# Clone the repository
 git clone https://github.com/Developer/crypto-tracker-23.git
 cd crypto-tracker-23
-
-# Create and activate a virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows use: venv\Scripts\activate
-
-# Install dependencies
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
 ## Usage
 
-Configure your portfolio holdings in `config/portfolio.json`, then launch the tracker from your terminal.
+### Quick Start (CLI)
+
+Run the default tracking dashboard for Bitcoin, Ethereum, and Solana:
 
 ```bash
-# Run the application with default settings
-python main.py --config config/portfolio.json
-
-# Stream live prices for specific assets only
-python main.py --symbols BTC,ETH,SOL --interval 5
+python main.py --assets btc,eth,sol --currency usd --interval 5
 ```
 
-To run a quick one-time market summary without loading a portfolio file:
+### Python API Example
 
-```bash
-python main.py --market-only --top 10
-```
+Integrate tracker feeds into your own Python scripts:
 
-## Project Structure
+```python
+from crypto_tracker import CryptoStreamer
 
-```text
-crypto-tracker-23/
-├── config/          # User portfolio and alert configurations
-├── src/             # Core API connectors and calculation engines
-├── data/            # Exported historical CSV datasets
-├── main.py          # Entry point for the CLI application
-└── requirements.txt # Project dependencies
+# Initialize streamer for target tokens
+streamer = CryptoStreamer(tokens=["bitcoin", "ethereum"], vs_currency="usd")
+
+# Stream real-time prices to console
+@streamer.on_tick
+def handle_tick(data):
+    print(f"[{data['timestamp']}] {data['symbol']}: ${data['price']:,.2f}")
+
+streamer.start()
 ```
 
 ## License
 
-Distributed under the MIT License. See `LICENSE` for more information.
+This project is licensed under the [MIT License](LICENSE).
