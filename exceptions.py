@@ -1,45 +1,45 @@
-class CryptoError(Exception):
-    """Base exception for all crypto-tracker-23 errors."""
+import time
+from typing import Optional
 
-class MarketDataUnavailable(CryptoError):
-    """Raised when external API is unreachable."""
 
-class WalletSyncError(CryptoError):
-    """Raised when blockchain sync fails unexpectedly."""
+class CryptoTrackerError(Exception):
+    """Base exception for the crypto-tracker-23 application."""
 
-class RateLimitExceeded(CryptoError):
-    """Raised when API providers throttle our requests."""
+    def __init__(self, message: str, context: Optional[dict] = None):
+        super().__init__(message)
+        self.context = context or {}
+        self.timestamp = time.time()
 
-def handle_crypto_exception(e: Exception) -> dict:
-    """
-    A somewhat theatrical mapper for custom exceptions into payloads.
-    Transforms errors into a structured reporting dictionary.
-    """
-    error_map = {
-        MarketDataUnavailable: "CRITICAL_NETWORK_FAILURE",
-        WalletSyncError: "LEDGER_INCONSISTENCY_DETECTED",
-        RateLimitExceeded: "API_COOLING_OFF_PERIOD_REQUIRED"
-    }
-    
-    error_type = type(e)
-    status = error_map.get(error_type, "UNKNOWN_ANOMALY")
-    
-    return {
-        "error_code": status,
-        "message": str(e),
-        "timestamp": __import__('time').time(),
-        "component": "crypto-tracker-23-engine"
-    }
+    def __str__(self) -> str:
+        return f"[{self.__class__.__name__}] {super().__str__()} | Context: {self.context}"
 
-class CriticalFailureContext:
-    """
-    A context manager for graceful shutdown on fatal errors.
-    Usage: with CriticalFailureContext(): ...
-    """
-    def __enter__(self):
-        return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type:
-            print(f"[!] Emergency Halt: {exc_val}")
-            return False
+class RateLimitExceeded(CryptoTrackerError):
+    """Raised when the external API rate limit is reached."""
+
+    def __init__(self, retry_after: int, endpoint: str):
+        message = f"Rate limit reached for {endpoint}. Cool down required."
+        super().__init__(
+            message, {"retry_after": retry_after, "endpoint": endpoint}
+        )
+        self.retry_after = retry_after
+
+    @property
+    def resumes_at(self) -> float:
+        return self.timestamp + self.retry_after
+
+
+class InvalidTickerError(CryptoTrackerError):
+    """Raised when an unsupported or non-existent crypto symbol is queried."""
+
+    def __init__(self, ticker: str):
+        message = f"Ticker '{ticker}' is unrecognized by tracking providers."
+        super().__init__(message, {"suggested_fix": "Check symbol spelling"})
+
+
+class MarketDataAnomaly(CryptoTrackerError):
+    """Raised when prices deviate unexpectedly, hinting at flash crashes or bad data."""
+
+    def __init__(self, ticker: str, price: float, deviation: float):
+        message = f"Suspicious activity detected for {ticker} (Price: {price})."
+        super().__init__(message, {"price": price, "deviation": deviation})
