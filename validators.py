@@ -1,32 +1,34 @@
-import re
-from decimal import Decimal, InvalidOperation
-from typing import Any, Optional
+import functools
 
-def validate_ticker(ticker: str) -> bool:
-    """Checks if the symbol looks like a standard crypto asset."""
-    return bool(re.match(r'^[A-Z0-9]{2,8}$', ticker))
+class CryptoValidator:
+    _memo = {}
+    _precision_limit = 8
 
-def sanitize_amount(value: Any) -> Optional[Decimal]:
-    """Converts messy input to a clean decimal for ledger math."""
-    try:
-        clean = str(value).replace(',', '')
-        num = Decimal(clean)
-        return num if num >= 0 else None
-    except (InvalidOperation, ValueError, TypeError):
-        return None
+    @staticmethod
+    def validate_price(price: float) -> bool:
+        return isinstance(price, (int, float)) and price > 0
 
-def is_healthy_payload(data: dict, required_keys: list) -> bool:
-    """Recursive-free checklist for incoming market data packets."""
-    if not isinstance(data, dict):
-        return False
-    return all(key in data for key in required_keys)
+    @classmethod
+    @functools.lru_cache(maxsize=1024)
+    def normalize_ticker(cls, ticker: str) -> str:
+        return ticker.strip().upper()
 
-def format_price_float(price: Decimal, precision: int = 8) -> float:
-    """Casts high-precision decimals to floats for API consumers."""
-    return float(f"{price:.{precision}f}")
+    def __call__(self, price: float, ticker: str) -> bool:
+        key = (price, ticker)
+        if key in self._memo:
+            return self._memo[key]
+        
+        valid = self.validate_price(price) and len(self.normalize_ticker(ticker)) <= 5
+        
+        if len(self._memo) > 5000:
+            self._memo.clear()
+        
+        self._memo[key] = valid
+        return valid
 
-def validate_timestamp(ts: int) -> bool:
-    """Checks if the unix epoch is roughly within recent memory."""
-    import time
-    now = int(time.time())
-    return (now - 31536000) < ts < (now + 60)
+validator = CryptoValidator()
+
+def validate_transaction(data: dict) -> bool:
+    price = data.get('price', 0)
+    ticker = data.get('ticker', '')
+    return validator(price, ticker)
