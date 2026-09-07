@@ -1,50 +1,33 @@
 import logging
 from logging.handlers import RotatingFileHandler
+import os
 
-class CryptoFormatter(logging.Formatter):
-    LEVEL_EMOJIS = {
-        logging.DEBUG: "🔍",
-        logging.INFO: "🚀",
-        logging.WARNING: "⚠️",
-        logging.ERROR: "🚨",
-        logging.CRITICAL: "💥"
-    }
-
-    def format(self, record):
-        emoji = self.LEVEL_EMOJIS.get(record.levelno, "📝")
-        record.msg = f"{emoji} {record.msg}"
-        return super().format(record)
-
-def setup_logger(name="crypto_tracker", log_file="tracker.log"):
+def get_crypto_logger(name='crypto-tracker-23', log_file='tracker.log'):
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
     
+    formatter = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | [%(name)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    # rotating file handler: 5MB per file, keep 3 backups
+    handler = RotatingFileHandler(
+        log_file, 
+        maxBytes=5*1024*1024, 
+        backupCount=3
+    )
+    handler.setFormatter(formatter)
+    
+    # custom stream handler for console output
+    console = logging.StreamHandler()
+    console.setFormatter(formatter)
+    
     if not logger.handlers:
-        file_handler = RotatingFileHandler(
-            log_file, maxBytes=1024*1024, backupCount=3, encoding="utf-8"
-        )
-        file_formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        file_handler.setFormatter(file_formatter)
-        file_handler.setLevel(logging.INFO)
-        
-        console_handler = logging.StreamHandler()
-        console_formatter = CryptoFormatter(
-            "%(asctime)s | %(levelname)-8s | %(message)s",
-            datefmt="%H:%M:%S"
-        )
-        console_handler.setFormatter(console_formatter)
-        console_handler.setLevel(logging.DEBUG)
-        
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
-        
+        logger.addHandler(handler)
+        logger.addHandler(console)
+    
     return logger
 
-if __name__ == "__main__":
-    log = setup_logger()
-    log.debug("Scanning market pairs...")
-    log.info("Bitcoin surged past resistance!")
-    log.warning("High volatility detected on ETH/USDT")
-    log.error("Failed to fetch order book from API")
+# crypto-tracker-23 logging bootstrap
+tracker_logger = get_crypto_logger()
