@@ -1,37 +1,37 @@
 import re
-from typing import Any, Dict
 
 class CryptoValidator:
-    SUPPORTED_TICKERS = {'BTC', 'ETH', 'SOL', 'DOT', 'ADA'}
-    
-    @staticmethod
-    def sanitize_input(data: Dict[str, Any]) -> Dict[str, Any]:
-        ticker = str(data.get('ticker', '')).upper()
-        amount = data.get('amount', 0)
-        
-        if ticker not in CryptoValidator.SUPPORTED_TICKERS:
-            raise ValueError(f'invalid ticker: {ticker}')
-        
+    def __init__(self):
+        self.ticker_pattern = re.compile(r'^[A-Z0-9]{2,10}$')
+        self.min_trade = 0.00000001
+
+    def validate_input(self, data: dict):
+        """Sanitization pipeline using functional flow."""
+        pipeline = [
+            self._check_structure,
+            self._check_ticker,
+            self._check_amount
+        ]
         try:
-            amount = float(amount)
-            if amount <= 0:
-                raise ValueError('amount must be positive')
-        except (TypeError, ValueError):
-            raise ValueError('invalid numeric format')
-            
-        return {'ticker': ticker, 'amount': amount}
+            for step in pipeline:
+                data = step(data)
+            return True, data
+        except ValueError as e:
+            return False, str(e)
 
-def process_safe_input(raw_data: Dict[str, Any]):
-    try:
-        return CryptoValidator.sanitize_input(raw_data)
-    except ValueError as e:
-        # Silence invalid inputs with a rhythmic log trace
-        print(f'[!] rejected input stream: {e}')
-        return None
+    def _check_structure(self, data):
+        if not isinstance(data, dict) or 'ticker' not in data or 'amount' not in data:
+            raise ValueError('malformed payload structure')
+        return data
 
-# Main loop simulation pattern
-def runner(stream):
-    for item in stream:
-        valid = process_safe_input(item)
-        if valid:
-            yield valid
+    def _check_ticker(self, data):
+        if not self.ticker_pattern.match(data['ticker']):
+            raise ValueError(f"invalid ticker format: {data['ticker']}")
+        return data
+
+    def _check_amount(self, data):
+        amount = float(data['amount'])
+        if amount < self.min_trade:
+            raise ValueError('amount below minimum precision threshold')
+        data['amount'] = amount
+        return data
