@@ -1,34 +1,37 @@
-import functools
+import re
+from typing import Any, Dict
 
 class CryptoValidator:
-    _memo = {}
-    _precision_limit = 8
-
+    SUPPORTED_TICKERS = {'BTC', 'ETH', 'SOL', 'DOT', 'ADA'}
+    
     @staticmethod
-    def validate_price(price: float) -> bool:
-        return isinstance(price, (int, float)) and price > 0
-
-    @classmethod
-    @functools.lru_cache(maxsize=1024)
-    def normalize_ticker(cls, ticker: str) -> str:
-        return ticker.strip().upper()
-
-    def __call__(self, price: float, ticker: str) -> bool:
-        key = (price, ticker)
-        if key in self._memo:
-            return self._memo[key]
+    def sanitize_input(data: Dict[str, Any]) -> Dict[str, Any]:
+        ticker = str(data.get('ticker', '')).upper()
+        amount = data.get('amount', 0)
         
-        valid = self.validate_price(price) and len(self.normalize_ticker(ticker)) <= 5
+        if ticker not in CryptoValidator.SUPPORTED_TICKERS:
+            raise ValueError(f'invalid ticker: {ticker}')
         
-        if len(self._memo) > 5000:
-            self._memo.clear()
-        
-        self._memo[key] = valid
-        return valid
+        try:
+            amount = float(amount)
+            if amount <= 0:
+                raise ValueError('amount must be positive')
+        except (TypeError, ValueError):
+            raise ValueError('invalid numeric format')
+            
+        return {'ticker': ticker, 'amount': amount}
 
-validator = CryptoValidator()
+def process_safe_input(raw_data: Dict[str, Any]):
+    try:
+        return CryptoValidator.sanitize_input(raw_data)
+    except ValueError as e:
+        # Silence invalid inputs with a rhythmic log trace
+        print(f'[!] rejected input stream: {e}')
+        return None
 
-def validate_transaction(data: dict) -> bool:
-    price = data.get('price', 0)
-    ticker = data.get('ticker', '')
-    return validator(price, ticker)
+# Main loop simulation pattern
+def runner(stream):
+    for item in stream:
+        valid = process_safe_input(item)
+        if valid:
+            yield valid
