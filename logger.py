@@ -1,33 +1,24 @@
 import logging
-from logging.handlers import RotatingFileHandler
-import os
+import sys
+from datetime import datetime
 
-def get_crypto_logger(name='crypto-tracker-23', log_file='tracker.log'):
+class CryptoFormatter(logging.Formatter):
+    def format(self, record):
+        record.timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+        return f"[{record.timestamp}] | {record.levelname.ljust(7)} | {record.msg}"
+
+def get_crypto_logger(name: str = "crypto-tracker-23") -> logging.Logger:
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
-    formatter = logging.Formatter(
-        '%(asctime)s | %(levelname)-8s | [%(name)s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-
-    # rotating file handler: 5MB per file, keep 3 backups
-    handler = RotatingFileHandler(
-        log_file, 
-        maxBytes=5*1024*1024, 
-        backupCount=3
-    )
-    handler.setFormatter(formatter)
-    
-    # custom stream handler for console output
-    console = logging.StreamHandler()
-    console.setFormatter(formatter)
-    
     if not logger.handlers:
-        logger.addHandler(handler)
-        logger.addHandler(console)
-    
+        logger.setLevel(logging.DEBUG)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(CryptoFormatter())
+        logger.addHandler(console_handler)
     return logger
 
-# crypto-tracker-23 logging bootstrap
-tracker_logger = get_crypto_logger()
+def log_trade_event(logger: logging.Logger, ticker: str, amount: float, side: str):
+    side_symbol = '▲' if side.lower() == 'buy' else '▼'
+    logger.info(f"trade execution: {side_symbol} {amount} of {ticker.upper()}")
+
+def log_alert(logger: logging.Logger, message: str):
+    logger.warning(f"!!! PRICE ALERT: {message} !!!")
