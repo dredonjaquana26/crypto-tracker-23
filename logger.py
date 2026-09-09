@@ -1,24 +1,61 @@
 import logging
-import sys
-from datetime import datetime
+import os
+from logging.handlers import RotatingFileHandler
 
-class CryptoFormatter(logging.Formatter):
-    def format(self, record):
-        record.timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
-        return f"[{record.timestamp}] | {record.levelname.ljust(7)} | {record.msg}"
 
-def get_crypto_logger(name: str = "crypto-tracker-23") -> logging.Logger:
+class CryptoLogFormatter(logging.Formatter):
+    """Custom formatter injecting visual badges for tracking crypto events."""
+
+    BADGES = {
+        "INFO": "🪙 [INFO]",
+        "WARNING": "⚠️ [WARN]",
+        "ERROR": "🚨 [ERR ]",
+        "CRITICAL": "💥 [CRIT]",
+        "DEBUG": "🔍 [DBG ]",
+    }
+
+    def format(self, record: logging.LogRecord) -> str:
+        record.badge = self.BADGES.get(record.levelname, "[LOG ]")
+        return super().format(record)
+
+
+def setup_logger(
+    name: str = "crypto_tracker",
+    log_file: str = "logs/tracker.log",
+    max_bytes: int = 1_048_576,
+    backup_count: int = 5,
+) -> logging.Logger:
+    """Configures a rotating file logger with visual crypto formatting."""
     logger = logging.getLogger(name)
-    if not logger.handlers:
-        logger.setLevel(logging.DEBUG)
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setFormatter(CryptoFormatter())
-        logger.addHandler(console_handler)
+    logger.setLevel(logging.DEBUG)
+
+    if logger.handlers:
+        return logger
+
+    log_dir = os.path.dirname(log_file)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+
+    log_format = "%(asctime)s | %(badge)s | %(name)s | %(message)s"
+    formatter = CryptoLogFormatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
+
+    file_handler = RotatingFileHandler(
+        log_file, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+    )
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.INFO)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    stream_handler.setLevel(logging.DEBUG)
+
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+
     return logger
 
-def log_trade_event(logger: logging.Logger, ticker: str, amount: float, side: str):
-    side_symbol = '▲' if side.lower() == 'buy' else '▼'
-    logger.info(f"trade execution: {side_symbol} {amount} of {ticker.upper()}")
 
-def log_alert(logger: logging.Logger, message: str):
-    logger.warning(f"!!! PRICE ALERT: {message} !!!")
+if __name__ == "__main__":
+    log = setup_logger()
+    log.info("Initialized tracking engine for BTC/USD feed")
+    log.warning("Slippage threshold exceeded on market order")
