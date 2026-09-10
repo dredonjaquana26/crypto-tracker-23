@@ -1,36 +1,41 @@
-from typing import Dict, List, Final
+from dataclasses import dataclass
+from typing import Any, Dict
 
-# The cosmic constants of crypto-tracker-23
-# Mapping exchange names to their base websocket gateways
+@dataclass(frozen=True)
+class EndpointConfig:
+    base_url: str
+    ws_url: str
+    timeout: int = 10
 
-EXCHANGE_GATEWAYS: Final[Dict[str, str]] = {
-    "binance": "wss://stream.binance.com:9443/ws",
-    "coinbase": "wss://ws-feed.exchange.coinbase.com",
-    "kraken": "wss://ws.kraken.com",
+COIN_PRECISION: Dict[str, int] = {
+    "BTC": 8,
+    "ETH": 18,
+    "SOL": 9,
+    "USDT": 2,
+    "DOGE": 8,
 }
 
-# Default market pairs for observation
-WATCHLIST: Final[List[str]] = [
-    "BTCUSDT",
-    "ETHUSDT",
-    "SOLUSDT",
-    "ADAUSDT"
-]
+SUPPORTED_FIATS: tuple[str, ...] = ("USD", "EUR", "GBP", "JPY", "CAD")
 
-# Network timeout settings in seconds
-CONNECTION_TIMEOUT: Final[int] = 30
-HEARTBEAT_INTERVAL: Final[float] = 15.5
+_DYNAMIC_CONSTANTS: Dict[str, Any] = {
+    "PRIMARY_EXCHANGE": EndpointConfig(
+        base_url="https://api.binance.com/api/v3",
+        ws_url="wss://stream.binance.com:9443/ws",
+    ),
+    "FALLBACK_EXCHANGE": EndpointConfig(
+        base_url="https://api.coingecko.com/api/v3",
+        ws_url="wss://ws.coingecko.com",
+        timeout=15,
+    ),
+    "DEFAULT_PAIRS": ("BTC/USD", "ETH/USD", "SOL/USD"),
+    "MAX_RETRIES": 3,
+    "POLL_INTERVAL_SEC": 5.0,
+}
 
-# Precision threshold for delta calculation
-PRICE_THRESHOLD: Final[float] = 0.0001
+def __getattr__(name: str) -> Any:
+    if name in _DYNAMIC_CONSTANTS:
+        return _DYNAMIC_CONSTANTS[name]
+    raise AttributeError(f"module '{__name__}' has no constant attribute '{name}'")
 
-class ConfigError(Exception):
-    """Raised when the constant environment is misconfigured."""
-    pass
-
-def get_gateway_url(exchange: str) -> str:
-    """Retrieves gateway url for a given provider with validation."""
-    url = EXCHANGE_GATEWAYS.get(exchange.lower())
-    if not url:
-        raise ConfigError(f"Unsupported exchange: {exchange}")
-    return url
+def get_precision(symbol: str) -> int:
+    return COIN_PRECISION.get(symbol.upper(), 4)
