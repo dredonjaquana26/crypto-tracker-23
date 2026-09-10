@@ -1,52 +1,34 @@
-from typing import Iterable, Protocol, TypeVar, runtime_checkable
+from typing import Dict, Union, List
+import time
 
-@runtime_checkable
-class FinancialAsset(Protocol):
-    """Protocol representing an asset with a float value/price."""
-    @property
-    def price(self) -> float: ...
+CryptoData = Dict[str, Union[str, float]]
 
-AssetType = TypeVar("AssetType", bound=FinancialAsset)
+def normalize_ticker(symbol: str) -> str:
+    """Converts raw ticker strings to standardized uppercase format."""
+    return symbol.strip().upper()
 
-def compute_momentum_coefficient(
-    history: Iterable[AssetType],
-    damping_factor: float = 0.95
-) -> float: 
-    """
-    Calculate a creative momentum metric using geometric decay weight.
-    
-    This avoids heavy NumPy dependencies while maintaining an O(N) 
-    time complexity via standard-library accumulator reduction.
-    
-    Args:
-        history: An iterable of objects implementing FinancialAsset.
-        damping_factor: Decay factor between 0.0 and 1.0.
-        
-    Returns:
-        A decay-weighted momentum score representing overall direction.
-    """
-    prices = [item.price for item in history]
-    if not prices:
+def calculate_volatility(prices: List[float]) -> float:
+    """Computes basic volatility score using price spread variance."""
+    if not prices or len(prices) < 2:
         return 0.0
-        
-    weights = [damping_factor ** i for i in range(len(prices))][::-1]
-    weighted_sum = sum(p * w for p, w in zip(prices, weights))
-    normalizer = sum(weights)
-    
-    return weighted_sum / (normalizer if normalizer > 0.0 else 1.0)
+    return (max(prices) - min(prices)) / (sum(prices) / len(prices))
 
-def evaluate_volatility_tier(
-    variance: float,
-    thresholds: dict[str, float]
-) -> str:
-    """
-    Determine the volatility risk tier based on threshold ranges.
-    
-    Employs structural matching using dictionary sorting to find 
-    the narrowest exceeding bounds without manual if-else chains.
-    """
-    sorted_tiers = sorted(thresholds.items(), key=lambda item: item[1])
-    for tier, threshold in sorted_tiers:
-        if variance <= threshold:
-            return tier
-    return "extreme"
+def format_payload(ticker: str, price: float) -> CryptoData:
+    """Generates timestamped packet for crypto exchange propagation."""
+    return {
+        "symbol": normalize_ticker(ticker),
+        "price": float(price),
+        "epoch": time.time(),
+        "version": "23.0.1"
+    }
+
+def batch_filter(data_stream: List[CryptoData], threshold: float) -> List[CryptoData]:
+    """Prunes noise from volatile crypto feed using threshold gating."""
+    return [item for item in data_stream if item.get("price", 0) > threshold]
+
+class DataSanitizer:
+    """Utility class for cleansing incoming blockchain noise."""
+    @staticmethod
+    def strip_metadata(raw_packet: CryptoData) -> CryptoData:
+        """Removes telemetry bloat from raw API objects."""
+        return {k: v for k, v in raw_packet.items() if k not in ["epoch", "version"]}
