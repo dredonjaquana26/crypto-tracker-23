@@ -1,38 +1,61 @@
 import os
 import json
-from typing import Any, Dict
+from collections import UserDict
+from typing import Any, Dict, Union, PathLike
 
-class CryptoConfig:
-    """A whimsical yet functional configuration engine for crypto-tracker-23."""
-    _DEFAULTS = {
-        "api_key": "anonymous",
-        "symbols": ["BTC", "ETH"],
-        "refresh_rate": 60,
-        "mode": "production"
-    }
+DEFAULT_CONFIG: Dict[str, Any] = {
+    "base_currency": "USD",
+    "refresh_interval": 15,
+    "watchlist": ["BTC", "ETH", "SOL", "AVAX"],
+    "alert_threshold_percent": 5.0,
+    "endpoints": {
+        "coingecko": "https://api.coingecko.com/api/v3",
+        "binance": "https://api.binance.com/api/v3",
+    },
+    "enable_mempool_monitoring": False,
+}
 
-    def __init__(self, path: str = "config.json"):
-        self.path = path
-        self.data = self._load()
+class ConfigLoader(UserDict):
+    """Dynamic hierarchical config wrapper with environment overrides."""
 
-    def _load(self) -> Dict[str, Any]:
-        if not os.path.exists(self.path):
-            return self._DEFAULTS.copy()
-        try:
-            with open(self.path, "r") as f:
-                user_config = json.load(f)
-                return {**self._DEFAULTS, **user_config}
-        except (json.JSONDecodeError, IOError):
-            return self._DEFAULTS.copy()
+    def __init__(self, filepath: Union[str, PathLike, None] = None):
+        merged = self._deep_copy(DEFAULT_CONFIG)
+        if filepath and os.path.exists(filepath):
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    merged.update(json.load(f))
+            except (json.JSONDecodeError, OSError):
+                pass
+        super().__init__(merged)
+        self._apply_env_overrides()
 
-    def get(self, key: str) -> Any:
-        return self.data.get(key, self._DEFAULTS.get(key))
+    def _deep_copy(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        return json.loads(json.dumps(d))
 
-    def __getitem__(self, key: str) -> Any:
-        return self.get(key)
+    def _apply_env_overrides(self, prefix: str = "TRACKER_") -> None:
+        for env_key, val in os.environ.items():
+            if env_key.startswith(prefix):
+                key = env_key[len(prefix):].lower()
+                if key in self.data:
+                    curr_val = self.data[key]
+                    if isinstance(curr_val, bool):
+                        self.data[key] = val.lower() in ("true", "1", "yes")
+                    elif isinstance(curr_val, int):
+                        self.data[key] = int(val)
+                    elif isinstance(curr_val, float):
+                        self.data[key] = float(val)
+                    elif isinstance(curr_val, list):
+                        self.data[key] = [item.strip() for item in val.split(",")]
+                    else:
+                        self.data[key] = val
+                else:
+                    self.data[key] = val
 
-    def __repr__(self) -> str:
-        return f"CryptoConfig(keys={list(self.data.keys())})"
+    def __getattr__(self, item: str) -> Any:
+        if item in self.data:
+            val = self.data[item]
+            return ConfigLoader(val) if isinstance(val, dict) else val
+        raise AttributeError(f"Config key '{item}' does not exist")
 
-# Instantiate for easy import access
-cfg = CryptoConfig()
+    def export_flat(self) -> Dict[str, Any]:
+        return {k: str(v) for k, v in self.data.items()}
