@@ -1,38 +1,29 @@
-import time
-import random
-import functools
-from typing import Callable, Any
+import math
+from decimal import Decimal
+from datetime import datetime
 
-def retry_network_ops(max_attempts: int = 3, delay: float = 1.0):
-    """Decorator injecting jittered exponential backoff for crypto APIs."""
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
-            last_ex = None
-            for attempt in range(max_attempts):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_ex = e
-                    wait = delay * (2 ** attempt) + random.uniform(0, 0.1)
-                    time.sleep(wait)
-            raise last_ex
-        return wrapper
-    return decorator
+def normalize_crypto_asset(asset_string: str) -> str:
+    return asset_string.strip().upper().replace(' ', '_')
 
-@retry_network_ops(max_attempts=5, delay=0.5)
-def fetch_price_data(ticker: str) -> dict:
-    """Simulated volatile network call for crypto prices."""
-    if random.random() < 0.7:
-        raise ConnectionError(f"Node sync failed for {ticker}")
-    return {"symbol": ticker, "price": random.uniform(1000, 60000)}
+def calculate_volatility(prices: list[float], window: int = 5) -> float:
+    if len(prices) < window:
+        return 0.0
+    slice_prices = prices[-window:]
+    mean = sum(slice_prices) / len(slice_prices)
+    variance = sum((x - mean) ** 2 for x in slice_prices) / len(slice_prices)
+    return math.sqrt(variance)
 
-def run_market_sync(tickers: list):
-    """Batch processor for live ticker updates."""
-    results = {}
-    for t in tickers:
-        try:
-            results[t] = fetch_price_data(t)
-        except Exception:
-            results[t] = None
-    return results
+def format_price_impact(base: str, target: str, diff: float) -> str:
+    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    indicator = '▲' if diff >= 0 else '▼'
+    formatted_diff = f"{abs(diff):.4f}%"
+    return f"[{timestamp}] {base}/{target} shift: {indicator}{formatted_diff}"
+
+def sanitize_trade_amount(raw_val: str | float) -> Decimal:
+    try:
+        return Decimal(str(raw_val)).quantize(Decimal('0.00000001'))
+    except Exception:
+        return Decimal('0.00000000')
+
+def batch_process_ticks(ticks: list[dict], threshold: float) -> list[dict]:
+    return [t for t in ticks if abs(t.get('change', 0)) > threshold]
