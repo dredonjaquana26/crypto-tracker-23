@@ -1,37 +1,32 @@
-import re
+import time
+import functools
+import random
+import logging
 
-class CryptoValidator:
-    def __init__(self):
-        self.ticker_pattern = re.compile(r'^[A-Z0-9]{2,10}$')
-        self.min_trade = 0.00000001
+logger = logging.getLogger('crypto-tracker-23')
 
-    def validate_input(self, data: dict):
-        """Sanitization pipeline using functional flow."""
-        pipeline = [
-            self._check_structure,
-            self._check_ticker,
-            self._check_amount
-        ]
-        try:
-            for step in pipeline:
-                data = step(data)
-            return True, data
-        except ValueError as e:
-            return False, str(e)
+def resilient_network_call(max_retries=3, base_delay=1):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            attempts = 0
+            while attempts < max_retries:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    attempts += 1
+                    if attempts >= max_retries:
+                        logger.error(f'Critical network failure after {max_retries} attempts')
+                        raise
+                    sleep_time = (base_delay * (2 ** attempts)) + random.uniform(0, 1)
+                    logger.warning(f'Attempt {attempts} failed: {e}. Retrying in {sleep_time:.2f}s')
+                    time.sleep(sleep_time)
+        return wrapper
+    return decorator
 
-    def _check_structure(self, data):
-        if not isinstance(data, dict) or 'ticker' not in data or 'amount' not in data:
-            raise ValueError('malformed payload structure')
-        return data
-
-    def _check_ticker(self, data):
-        if not self.ticker_pattern.match(data['ticker']):
-            raise ValueError(f"invalid ticker format: {data['ticker']}")
-        return data
-
-    def _check_amount(self, data):
-        amount = float(data['amount'])
-        if amount < self.min_trade:
-            raise ValueError('amount below minimum precision threshold')
-        data['amount'] = amount
-        return data
+@resilient_network_call(max_retries=5)
+def fetch_market_data(ticker: str):
+    # Simulate volatile crypto network conditions
+    if random.random() < 0.7:
+        raise ConnectionError('Exchange node timeout')
+    return {'ticker': ticker, 'price': random.uniform(10000, 60000)}
