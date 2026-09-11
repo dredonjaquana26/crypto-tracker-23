@@ -1,34 +1,37 @@
-from typing import Dict, Union, List
 import time
+import functools
+from decimal import Decimal
 
-CryptoData = Dict[str, Union[str, float]]
+def retry_on_failure(retries=3, delay=1.5):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_ex = None
+            for i in range(retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_ex = e
+                    time.sleep(delay * (2 ** i))
+            raise last_ex
+        return wrapper
+    return decorator
 
-def normalize_ticker(symbol: str) -> str:
-    """Converts raw ticker strings to standardized uppercase format."""
-    return symbol.strip().upper()
+def to_decimal(val):
+    return Decimal(str(val)).normalize()
 
-def calculate_volatility(prices: List[float]) -> float:
-    """Computes basic volatility score using price spread variance."""
-    if not prices or len(prices) < 2:
-        return 0.0
-    return (max(prices) - min(prices)) / (sum(prices) / len(prices))
+def format_crypto_pair(base, quote):
+    return f"{base.upper()}/{quote.upper()}"
 
-def format_payload(ticker: str, price: float) -> CryptoData:
-    """Generates timestamped packet for crypto exchange propagation."""
-    return {
-        "symbol": normalize_ticker(ticker),
-        "price": float(price),
-        "epoch": time.time(),
-        "version": "23.0.1"
-    }
+def calculate_pct_change(old, new):
+    old, new = Decimal(str(old)), Decimal(str(new))
+    if old == 0:
+        return Decimal('0')
+    return ((new - old) / old) * 100
 
-def batch_filter(data_stream: List[CryptoData], threshold: float) -> List[CryptoData]:
-    """Prunes noise from volatile crypto feed using threshold gating."""
-    return [item for item in data_stream if item.get("price", 0) > threshold]
+class CryptoFilter:
+    def __init__(self, threshold):
+        self.threshold = Decimal(str(threshold))
 
-class DataSanitizer:
-    """Utility class for cleansing incoming blockchain noise."""
-    @staticmethod
-    def strip_metadata(raw_packet: CryptoData) -> CryptoData:
-        """Removes telemetry bloat from raw API objects."""
-        return {k: v for k, v in raw_packet.items() if k not in ["epoch", "version"]}
+    def is_significant(self, value):
+        return abs(Decimal(str(value))) >= self.threshold
