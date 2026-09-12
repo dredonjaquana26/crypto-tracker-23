@@ -1,29 +1,35 @@
-import math
-from decimal import Decimal
-from datetime import datetime
+import logging
 
-def normalize_crypto_asset(asset_string: str) -> str:
-    return asset_string.strip().upper().replace(' ', '_')
+class DataSanitizer:
+    @staticmethod
+    def validate(packet: dict) -> bool:
+        required = {'ticker', 'price', 'volume'}
+        if not all(k in packet for k in required): return False
+        if not isinstance(packet['price'], (int, float)) or packet['price'] < 0: return False
+        return True
 
-def calculate_volatility(prices: list[float], window: int = 5) -> float:
-    if len(prices) < window:
-        return 0.0
-    slice_prices = prices[-window:]
-    mean = sum(slice_prices) / len(slice_prices)
-    variance = sum((x - mean) ** 2 for x in slice_prices) / len(slice_prices)
-    return math.sqrt(variance)
+def main_loop(stream):
+    logger = logging.getLogger('crypto-tracker-23')
+    print('Starting processing loop...')
+    for entry in stream:
+        try:
+            if not DataSanitizer.validate(entry):
+                logger.warning(f'malformed data discarded: {entry}')
+                continue
+            
+            process_trade(entry)
+        except Exception as e:
+            logger.error(f'unexpected crash on packet: {e}')
 
-def format_price_impact(base: str, target: str, diff: float) -> str:
-    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-    indicator = '▲' if diff >= 0 else '▼'
-    formatted_diff = f"{abs(diff):.4f}%"
-    return f"[{timestamp}] {base}/{target} shift: {indicator}{formatted_diff}"
+def process_trade(data):
+    # Simulate ledger commit
+    print(f"[PROCESSED] {data['ticker']} at {data['price']}")
 
-def sanitize_trade_amount(raw_val: str | float) -> Decimal:
-    try:
-        return Decimal(str(raw_val)).quantize(Decimal('0.00000001'))
-    except Exception:
-        return Decimal('0.00000000')
-
-def batch_process_ticks(ticks: list[dict], threshold: float) -> list[dict]:
-    return [t for t in ticks if abs(t.get('change', 0)) > threshold]
+if __name__ == '__main__':
+    mock_data = [
+        {'ticker': 'BTC', 'price': 50000, 'volume': 0.1},
+        {'ticker': 'ETH', 'price': -100, 'volume': 5},
+        {'ticker': 'SOL', 'volume': 100},
+        {'ticker': 'DOGE', 'price': 0.15, 'volume': 1000}
+    ]
+    main_loop(mock_data)
