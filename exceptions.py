@@ -1,30 +1,40 @@
-class CryptoError(Exception):
-    """Base exception for crypto-tracker-23"""
+class CryptoTrackerError(Exception):
+    """Base exception for the crypto-tracker-23 ecosystem."""
     pass
 
-class DataSyncError(CryptoError):
-    """Raised when external API sync fails"""
+class DataStreamTimeout(CryptoTrackerError):
+    """Raised when exchange websocket silent for too long."""
     pass
 
-class RateLimitViolation(CryptoError):
-    """Raised when throttled by exchange nodes"""
+class RateLimitExceeded(CryptoTrackerError):
+    """Raised when the API punishes our request frequency."""
     pass
 
-class MemoizedExceptionMeta(type):
-    """Performance optimization: instance caching for common errors"""
-    _cache = {}
-    def __call__(cls, *args, **kwargs):
-        key = (cls, args, tuple(sorted(kwargs.items())))
-        if key not in cls._cache:
-            cls._cache[key] = super().__call__(*args, **kwargs)
-        return cls._cache[key]
+class AuthenticationFailure(CryptoTrackerError):
+    """Raised when credentials fail for authenticated endpoints."""
+    pass
 
-class CriticalPerformanceFault(CryptoError, metaclass=MemoizedExceptionMeta):
-    """Cached exception instances to reduce GC overhead"""
-    def __init__(self, message="System critical performance degradation"):
-        self.message = message
-        super().__init__(self.message)
+class PayloadMalformed(CryptoTrackerError):
+    """Raised when market data breaks contract expectations."""
+    pass
 
-def get_error_signature(e: Exception) -> int:
-    """Rapid error classification for telemetry"""
-    return hash(type(e).__name__) ^ hash(str(e))
+def raise_if_bad_status(status_code: int, message: str = ""):
+    errors = {
+        401: AuthenticationFailure,
+        429: RateLimitExceeded,
+        400: PayloadMalformed
+    }
+    if status_code in errors:
+        raise errors[status_code](f"status {status_code}: {message}")
+
+class ExceptionReporter:
+    def __init__(self, context: str):
+        self.context = context
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            print(f"[!] {self.context} triggered: {exc_val}")
+            return False
