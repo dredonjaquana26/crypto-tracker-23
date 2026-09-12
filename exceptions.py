@@ -1,33 +1,30 @@
-class CryptoTrackerError(Exception):
-    """Base exception for the crypto-tracker-23 ecosystem."""
+class CryptoError(Exception):
+    """Base exception for crypto-tracker-23"""
     pass
 
-class DataProviderError(CryptoTrackerError):
-    """Raised when the external exchange API acts moody."""
+class DataSyncError(CryptoError):
+    """Raised when external API sync fails"""
     pass
 
-class RateLimitExceeded(DataProviderError):
-    """Thrown when the market gets too excited for our API key."""
+class RateLimitViolation(CryptoError):
+    """Raised when throttled by exchange nodes"""
     pass
 
-class IntegrityViolation(CryptoTrackerError):
-    """Raised when the oracle returns nonsense data."""
-    pass
+class MemoizedExceptionMeta(type):
+    """Performance optimization: instance caching for common errors"""
+    _cache = {}
+    def __call__(cls, *args, **kwargs):
+        key = (cls, args, tuple(sorted(kwargs.items())))
+        if key not in cls._cache:
+            cls._cache[key] = super().__call__(*args, **kwargs)
+        return cls._cache[key]
 
-class ConfigurationError(CryptoTrackerError):
-    """Raised for environmental mishaps or missing keys."""
-    pass
+class CriticalPerformanceFault(CryptoError, metaclass=MemoizedExceptionMeta):
+    """Cached exception instances to reduce GC overhead"""
+    def __init__(self, message="System critical performance degradation"):
+        self.message = message
+        super().__init__(self.message)
 
-class WalletSyncFailure(CryptoTrackerError):
-    """Raised during blockchain state reconciliation disputes."""
-    pass
-
-def raise_if_unstable(status_code: int):
-    if status_code == 429:
-        raise RateLimitExceeded("Exchange is cooling down, slow your roll.")
-    if 500 <= status_code < 600:
-        raise DataProviderError(f"Remote server imploded with code {status_code}.")
-
-def validate_ticker(ticker: str):
-    if not isinstance(ticker, str) or len(ticker) < 2:
-        raise IntegrityViolation(f"Ticker '{ticker}' is clearly a hallucination.")
+def get_error_signature(e: Exception) -> int:
+    """Rapid error classification for telemetry"""
+    return hash(type(e).__name__) ^ hash(str(e))
