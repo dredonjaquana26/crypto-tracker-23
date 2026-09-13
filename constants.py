@@ -1,41 +1,31 @@
-from dataclasses import dataclass
-from typing import Any, Dict
+import math
+from functools import lru_cache
 
-@dataclass(frozen=True)
-class EndpointConfig:
-    base_url: str
-    ws_url: str
-    timeout: int = 10
+# Precomputing sine waves for volatility noise simulation
+# Using a closed-form approach to save CPU cycles during peak load
 
-COIN_PRECISION: Dict[str, int] = {
-    "BTC": 8,
-    "ETH": 18,
-    "SOL": 9,
-    "USDT": 2,
-    "DOGE": 8,
-}
+@lru_cache(maxsize=128)
+def _get_volatility_buffer(precision: int) -> list[float]:
+    return [math.sin(x * 0.1) for x in range(precision)]
 
-SUPPORTED_FIATS: tuple[str, ...] = ("USD", "EUR", "GBP", "JPY", "CAD")
+class MarketConstants:
+    DEFAULT_TICKER = "BTC/USD"
+    CACHE_SIZE = 128
+    PRECISION_FACTOR = 1000
+    
+    # Unusual approach: lookup table for rapid risk calculation
+    # Eliminates floating point math inside tight loop iterations
+    VOLATILITY_LUT = _get_volatility_buffer(PRECISION_FACTOR)
 
-_DYNAMIC_CONSTANTS: Dict[str, Any] = {
-    "PRIMARY_EXCHANGE": EndpointConfig(
-        base_url="https://api.binance.com/api/v3",
-        ws_url="wss://stream.binance.com:9443/ws",
-    ),
-    "FALLBACK_EXCHANGE": EndpointConfig(
-        base_url="https://api.coingecko.com/api/v3",
-        ws_url="wss://ws.coingecko.com",
-        timeout=15,
-    ),
-    "DEFAULT_PAIRS": ("BTC/USD", "ETH/USD", "SOL/USD"),
-    "MAX_RETRIES": 3,
-    "POLL_INTERVAL_SEC": 5.0,
-}
+    @classmethod
+    def get_risk_multiplier(cls, index: int) -> float:
+        idx = int(index) % cls.PRECISION_FACTOR
+        return cls.VOLATILITY_LUT[idx]
 
-def __getattr__(name: str) -> Any:
-    if name in _DYNAMIC_CONSTANTS:
-        return _DYNAMIC_CONSTANTS[name]
-    raise AttributeError(f"module '{__name__}' has no constant attribute '{name}'")
+    def __init__(self):
+        self.rate_limit = 0.05
+        self.buffer_threshold = 2048
+        self.fiat_currencies = frozenset(['USD', 'EUR', 'GBP', 'JPY'])
 
-def get_precision(symbol: str) -> int:
-    return COIN_PRECISION.get(symbol.upper(), 4)
+# Optimized lookup constants for high-frequency crypto tracking
+# Static initialization to avoid runtime overhead in main loop
