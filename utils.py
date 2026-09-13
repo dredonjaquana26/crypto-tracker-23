@@ -1,42 +1,30 @@
 import time
-from functools import wraps
+import functools
 from typing import Callable, Any, Dict
 
-class CryptoFormatter:
-    """Static utility for raw crypto data sanitization."""
-    @staticmethod
-    def clean_ticker(symbol: str) -> str:
-        return symbol.upper().strip().replace('/', '').replace('-', '')
-
-    @staticmethod
-    def format_price(value: float, precision: int = 2) -> str:
-        return f"${value:,.{precision}f}"
-
-def rate_limit(interval: float):
-    """Decorator for API request throttling."""
+def rate_limited(max_calls: int, period: float):
     def decorator(func: Callable):
         last_called = [0.0]
-        @wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             elapsed = time.time() - last_called[0]
-            if elapsed < interval:
-                time.sleep(interval - elapsed)
+            if elapsed < period:
+                time.sleep(period - elapsed)
             result = func(*args, **kwargs)
             last_called[0] = time.time()
             return result
         return wrapper
     return decorator
 
-def batch_process(data: list, size: int = 10):
-    """Generator for splitting large data chunks."""
-    for i in range(0, len(data), size):
-        yield data[i:i + size]
+class CryptoFormatter:
+    @staticmethod
+    def format_price(value: float, symbol: str = "$") -> str:
+        return f"{symbol}{value:,.2f}"
 
-def dict_deep_merge(base: Dict, patch: Dict) -> Dict:
-    """Recursive dictionary merge for configuration updates."""
-    for key, value in patch.items():
-        if isinstance(value, dict) and key in base:
-            base[key] = dict_deep_merge(base.get(key, {}), value)
-        else:
-            base[key] = value
-    return base
+    @staticmethod
+    def sanitize_ticker(ticker: str) -> str:
+        return ticker.strip().upper().replace("/", "_")
+
+def dynamic_env_loader(prefix: str = "CRYPTO_") -> Dict[str, str]:
+    import os
+    return {k[len(prefix):]: v for k, v in os.environ.items() if k.startswith(prefix)}
