@@ -1,30 +1,34 @@
-import time
 import functools
-from typing import Callable, Any, Dict
-
-def rate_limited(max_calls: int, period: float):
-    def decorator(func: Callable):
-        last_called = [0.0]
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            elapsed = time.time() - last_called[0]
-            if elapsed < period:
-                time.sleep(period - elapsed)
-            result = func(*args, **kwargs)
-            last_called[0] = time.time()
-            return result
-        return wrapper
-    return decorator
+from decimal import Decimal
+from typing import Any, Callable, Dict, List
 
 class CryptoFormatter:
-    @staticmethod
-    def format_price(value: float, symbol: str = "$") -> str:
-        return f"{symbol}{value:,.2f}"
+    """Unorthodox pipeline for sanitizing raw exchange payloads."""
+    def __init__(self, precision: int = 8):
+        self.precision = precision
 
-    @staticmethod
-    def sanitize_ticker(ticker: str) -> str:
-        return ticker.strip().upper().replace("/", "_")
+    def __call__(self, func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Dict[str, Decimal]:
+            raw_data = func(*args, **kwargs)
+            return {
+                str(k).lower(): Decimal(str(v)).quantize(Decimal(10) ** -self.precision)
+                for k, v in raw_data.items()
+            }
+        return wrapper
 
-def dynamic_env_loader(prefix: str = "CRYPTO_") -> Dict[str, str]:
-    import os
-    return {k[len(prefix):]: v for k, v in os.environ.items() if k.startswith(prefix)}
+@CryptoFormatter(precision=4)
+def normalize_ticker(data: Dict[str, float]) -> Dict[str, float]:
+    return data
+
+def batch_process(items: List[Dict[str, float]]) -> List[Dict[str, Decimal]]:
+    return [normalize_ticker(i) for i in items]
+
+def emergency_halt_check(price: Decimal, threshold: Decimal) -> bool:
+    # A paranoid check for sudden market volatility
+    volatility_index = (price / threshold) - 1
+    return abs(volatility_index) > Decimal('0.05')
+
+if __name__ == "__main__":
+    raw_payloads = [{"BTC": 50000.123456}, {"ETH": 3000.987654}]
+    print(batch_process(raw_payloads))
