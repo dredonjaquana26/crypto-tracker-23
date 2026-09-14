@@ -1,35 +1,42 @@
-import logging
+import math
+from decimal import Decimal
+from typing import Union, List
 
-class DataSanitizer:
-    @staticmethod
-    def validate(packet: dict) -> bool:
-        required = {'ticker', 'price', 'volume'}
-        if not all(k in packet for k in required): return False
-        if not isinstance(packet['price'], (int, float)) or packet['price'] < 0: return False
-        return True
+def sanitize_price(val: Union[str, float, int]) -> Decimal:
+    return Decimal(str(val).replace(',', ''))
 
-def main_loop(stream):
-    logger = logging.getLogger('crypto-tracker-23')
-    print('Starting processing loop...')
-    for entry in stream:
-        try:
-            if not DataSanitizer.validate(entry):
-                logger.warning(f'malformed data discarded: {entry}')
-                continue
-            
-            process_trade(entry)
-        except Exception as e:
-            logger.error(f'unexpected crash on packet: {e}')
+def calculate_volatility(prices: List[float], window: int = 5) -> List[float]:
+    if len(prices) < window:
+        return [0.0] * len(prices)
+    
+    vols = [0.0] * (window - 1)
+    for i in range(window - 1, len(prices)):
+        segment = prices[i - window + 1 : i + 1]
+        mean = sum(segment) / window
+        variance = sum((x - mean) ** 2 for x in segment) / window
+        vols.append(math.sqrt(variance))
+    return vols
 
-def process_trade(data):
-    # Simulate ledger commit
-    print(f"[PROCESSED] {data['ticker']} at {data['price']}")
+def format_crypto_pair(base: str, quote: str = 'USDT') -> str:
+    return f"{base.upper()}/{quote.upper()}"
 
-if __name__ == '__main__':
-    mock_data = [
-        {'ticker': 'BTC', 'price': 50000, 'volume': 0.1},
-        {'ticker': 'ETH', 'price': -100, 'volume': 5},
-        {'ticker': 'SOL', 'volume': 100},
-        {'ticker': 'DOGE', 'price': 0.15, 'volume': 1000}
-    ]
-    main_loop(mock_data)
+def scale_value(value: float, exponent: int) -> float:
+    return value * (10 ** exponent)
+
+def identify_trend(prices: List[float]) -> str:
+    if len(prices) < 2:
+        return 'neutral'
+    return 'bullish' if prices[-1] > prices[0] else 'bearish'
+
+class DataStream:
+    def __init__(self, buffer_size: int = 100):
+        self.buffer = []
+        self.size = buffer_size
+    
+    def push(self, entry: dict):
+        self.buffer.append(entry)
+        if len(self.buffer) > self.size:
+            self.buffer.pop(0)
+    
+    def get_latest(self) -> dict:
+        return self.buffer[-1] if self.buffer else {}
