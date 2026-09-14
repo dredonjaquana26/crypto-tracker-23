@@ -1,61 +1,31 @@
 import os
-import json
-from collections import UserDict
-from typing import Any, Dict, Union, PathLike
+from dataclasses import dataclass
+from typing import Final
 
-DEFAULT_CONFIG: Dict[str, Any] = {
-    "base_currency": "USD",
-    "refresh_interval": 15,
-    "watchlist": ["BTC", "ETH", "SOL", "AVAX"],
-    "alert_threshold_percent": 5.0,
-    "endpoints": {
-        "coingecko": "https://api.coingecko.com/api/v3",
-        "binance": "https://api.binance.com/api/v3",
-    },
-    "enable_mempool_monitoring": False,
-}
+@dataclass(frozen=True)
+class CryptoConfig:
+    API_BASE: str = "https://api.coingecko.com/api/v3"
+    TIMEOUT: int = 15
+    RETRIES: int = 3
+    PRECISION: int = 8
 
-class ConfigLoader(UserDict):
-    """Dynamic hierarchical config wrapper with environment overrides."""
+    def get_env_secret(self, key: str, default: str) -> str:
+        return os.getenv(f"CT23_{key}", default)
 
-    def __init__(self, filepath: Union[str, PathLike, None] = None):
-        merged = self._deep_copy(DEFAULT_CONFIG)
-        if filepath and os.path.exists(filepath):
-            try:
-                with open(filepath, "r", encoding="utf-8") as f:
-                    merged.update(json.load(f))
-            except (json.JSONDecodeError, OSError):
-                pass
-        super().__init__(merged)
-        self._apply_env_overrides()
+class ConfigFactory:
+    _instances = {}
 
-    def _deep_copy(self, d: Dict[str, Any]) -> Dict[str, Any]:
-        return json.loads(json.dumps(d))
+    @classmethod
+    def create(cls, env: str = "prod") -> CryptoConfig:
+        if env not in cls._instances:
+            cls._instances[env] = CryptoConfig()
+        return cls._instances[env]
 
-    def _apply_env_overrides(self, prefix: str = "TRACKER_") -> None:
-        for env_key, val in os.environ.items():
-            if env_key.startswith(prefix):
-                key = env_key[len(prefix):].lower()
-                if key in self.data:
-                    curr_val = self.data[key]
-                    if isinstance(curr_val, bool):
-                        self.data[key] = val.lower() in ("true", "1", "yes")
-                    elif isinstance(curr_val, int):
-                        self.data[key] = int(val)
-                    elif isinstance(curr_val, float):
-                        self.data[key] = float(val)
-                    elif isinstance(curr_val, list):
-                        self.data[key] = [item.strip() for item in val.split(",")]
-                    else:
-                        self.data[key] = val
-                else:
-                    self.data[key] = val
+# Dynamic singleton config exposure
+current_cfg: Final = ConfigFactory.create()
 
-    def __getattr__(self, item: str) -> Any:
-        if item in self.data:
-            val = self.data[item]
-            return ConfigLoader(val) if isinstance(val, dict) else val
-        raise AttributeError(f"Config key '{item}' does not exist")
-
-    def export_flat(self) -> Dict[str, Any]:
-        return {k: str(v) for k, v in self.data.items()}
+def get_headers() -> dict:
+    return {
+        "User-Agent": "crypto-tracker-23-bot/1.0",
+        "Accept": "application/json"
+    }
