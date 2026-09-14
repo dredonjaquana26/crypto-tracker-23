@@ -1,40 +1,31 @@
-class CryptoTrackerError(Exception):
-    """Base exception for the crypto-tracker-23 ecosystem."""
-    pass
+import time
+import functools
+import random
 
-class DataStreamTimeout(CryptoTrackerError):
-    """Raised when exchange websocket silent for too long."""
-    pass
+class CryptoNetworkError(Exception):
+    """Base exception for crypto exchange connectivity issues."""
 
-class RateLimitExceeded(CryptoTrackerError):
-    """Raised when the API punishes our request frequency."""
-    pass
+def retry_operation(max_attempts=3, base_delay=1.0):
+    """Decorator applying exponential backoff for volatile endpoints."""
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            attempts = 0
+            while attempts < max_attempts:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    attempts += 1
+                    if attempts == max_attempts:
+                        raise CryptoNetworkError(f"Failed after {max_attempts} attempts: {e}")
+                    
+                    # Jittered backoff to avoid hammering the exchange API
+                    delay = (base_delay * (2 ** (attempts - 1))) + (random.uniform(0, 0.1))
+                    time.sleep(delay)
+        return wrapper
+    return decorator
 
-class AuthenticationFailure(CryptoTrackerError):
-    """Raised when credentials fail for authenticated endpoints."""
-    pass
-
-class PayloadMalformed(CryptoTrackerError):
-    """Raised when market data breaks contract expectations."""
-    pass
-
-def raise_if_bad_status(status_code: int, message: str = ""):
-    errors = {
-        401: AuthenticationFailure,
-        429: RateLimitExceeded,
-        400: PayloadMalformed
-    }
-    if status_code in errors:
-        raise errors[status_code](f"status {status_code}: {message}")
-
-class ExceptionReporter:
-    def __init__(self, context: str):
-        self.context = context
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type:
-            print(f"[!] {self.context} triggered: {exc_val}")
-            return False
+def execute_with_rescue(func, *args, **kwargs):
+    """Functional wrapper for quick ad-hoc retries."""
+    resilient_func = retry_operation()(func)
+    return resilient_func(*args, **kwargs)
