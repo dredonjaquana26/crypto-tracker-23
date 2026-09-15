@@ -1,39 +1,34 @@
-import functools
-import time
-from typing import Callable, Any
+import logging
 
-CACHE_TTL = 5.0
-_cache = {}
+class DataValidator:
+    @staticmethod
+    def sanity_check(data):
+        if not isinstance(data, dict): raise ValueError("Invalid payload format")
+        if 'ticker' not in data or 'price' not in data:
+            raise KeyError("Missing mandatory crypto telemetry")
+        if float(data['price']) <= 0:
+            raise ValueError("Price must be positive value")
+        return True
 
-def memoize_crypto_data(func: Callable) -> Callable:
-    @functools.wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        key = (func.__name__, args, frozenset(kwargs.items()))
-        now = time.monotonic()
-        if key in _cache:
-            result, timestamp = _cache[key]
-            if now - timestamp < CACHE_TTL:
-                return result
-        result = func(*args, **kwargs)
-        _cache[key] = (result, now)
-        return result
-    return wrapper
+def main_processing_loop(stream):
+    for raw_packet in stream:
+        try:
+            DataValidator.sanity_check(raw_packet)
+            process_trade(raw_packet)
+        except (ValueError, KeyError) as e:
+            logging.error(f"Dropped toxic data packet: {e}")
+        except Exception as e:
+            logging.critical(f"Unanticipated system failure: {e}")
 
-@memoize_crypto_data
-def fetch_market_price(symbol: str) -> float:
-    # Simulate high-latency network IO to blockchain nodes
-    time.sleep(0.5)
-    return 42069.69 if symbol == 'BTC' else 2500.0
+def process_trade(packet):
+    logging.info(f"Syncing {packet['ticker']} at {packet['price']}")
 
-class DataHandler:
-    def __init__(self, symbols: list):
-        self.symbols = symbols
-
-    def process_batch(self) -> dict:
-        """Batch processing using local memoized cache"""
-        return {s: fetch_market_price(s) for s in self.symbols}
-
-def cleanup_stale_cache():
-    global _cache
-    now = time.monotonic()
-    _cache = {k: v for k, v in _cache.items() if now - v[1] < CACHE_TTL}
+if __name__ == "__main__":
+    # Mock stream simulating erratic network noise
+    mock_data = [
+        {"ticker": "BTC", "price": 50000},
+        {"ticker": "ETH", "price": -100},
+        "invalid_data",
+        {"ticker": "SOL", "price": 120}
+    ]
+    main_processing_loop(mock_data)
