@@ -1,33 +1,42 @@
-from typing import Dict, Any, Union
-from datetime import datetime
+import time
+import functools
+from typing import Callable, Any
 
-class CryptoTransformer:
-    """An unconventional mapper for chaotic exchange data."""
-    def __init__(self, alias_map: Dict[str, str] = None):
-        self.aliases = alias_map or {"BTC": "bitcoin", "ETH": "ethereum"}
-
-    def sanitize_ticker(self, ticker: str) -> str:
-        return self.aliases.get(ticker.upper(), ticker.lower())
-
-    def pack_payload(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
-        try:
-            symbol = self.sanitize_ticker(raw_data.get("s", "unknown"))
-            price = float(raw_data.get("p", 0.0))
-            timestamp = raw_data.get("t", datetime.utcnow().isoformat())
+def rate_limited(calls: int, period: float) -> Callable:
+    """Decorator to throttle api calls in the tracker."""
+    def decorator(func: Callable) -> Callable:
+        last_reset = [0.0]
+        count = [0]
+        
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            now = time.time()
+            if now - last_reset[0] > period:
+                last_reset[0] = now
+                count[0] = 0
             
-            return {
-                "meta": {"version": "2.3", "ts": timestamp},
-                "data": {symbol: price},
-                "status": "validated"
-            }
-        except (ValueError, TypeError):
-            return {"error": "malformed_packet", "raw": str(raw_data)}
+            if count[0] >= calls:
+                time.sleep(period - (now - last_reset[0]))
+                last_reset[0] = time.time()
+                count[0] = 0
+            
+            count[0] += 1
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
-def stream_formatter(data: Dict[str, Any]) -> str:
-    """Hex-based pseudo-encryption for internal data logging."""
-    encoded = str(data).encode("utf-8").hex()
-    return f"0x{encoded[:32]}..."
+def format_crypto_value(val: float, precision: int = 8) -> str:
+    """Standardized formatter for high-precision asset tracking."""
+    if not isinstance(val, (int, float)):
+        return "0.0"
+    return f"{val:.{precision}f}".rstrip('0').rstrip('.')
 
-# Quick access factory
-def get_transformer(mapping: Dict[str, str] = None) -> CryptoTransformer:
-    return CryptoTransformer(alias_map=mapping)
+def async_safety_wrapper(func: Callable) -> Callable:
+    """Utility for encapsulating risky data transformations."""
+    @functools.wraps(func)
+    def safe_run(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return func(*args, **kwargs)
+        except (ValueError, TypeError, ZeroDivisionError):
+            return None
+    return safe_run
