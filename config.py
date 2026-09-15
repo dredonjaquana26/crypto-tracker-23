@@ -1,31 +1,28 @@
 import os
 from dataclasses import dataclass
-from typing import Final
+from typing import Dict, Any
 
 @dataclass(frozen=True)
 class CryptoConfig:
     API_BASE: str = "https://api.coingecko.com/api/v3"
-    TIMEOUT: int = 15
-    RETRIES: int = 3
-    PRECISION: int = 8
+    TIMEOUT: int = 10
+    SYMBOLS: tuple = ("bitcoin", "ethereum", "solana")
+    DB_PATH: str = "crypto_data.sqlite"
 
-    def get_env_secret(self, key: str, default: str) -> str:
-        return os.getenv(f"CT23_{key}", default)
+def get_env_or_default(key: str, default: Any) -> Any:
+    return os.getenv(key, default)
 
 class ConfigFactory:
-    _instances = {}
+    _instances: Dict[str, Any] = {}
 
     @classmethod
-    def create(cls, env: str = "prod") -> CryptoConfig:
-        if env not in cls._instances:
-            cls._instances[env] = CryptoConfig()
-        return cls._instances[env]
+    def fetch(cls) -> CryptoConfig:
+        if 'core' not in cls._instances:
+            cls._instances['core'] = CryptoConfig(
+                API_BASE=get_env_or_default("API_URL", "https://api.coingecko.com/api/v3"),
+                TIMEOUT=int(get_env_or_default("REQ_TIMEOUT", 10))
+            )
+        return cls._instances['core']
 
-# Dynamic singleton config exposure
-current_cfg: Final = ConfigFactory.create()
-
-def get_headers() -> dict:
-    return {
-        "User-Agent": "crypto-tracker-23-bot/1.0",
-        "Accept": "application/json"
-    }
+def load_settings() -> CryptoConfig:
+    return ConfigFactory.fetch()
