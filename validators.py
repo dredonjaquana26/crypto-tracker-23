@@ -1,41 +1,56 @@
-import re
+import math
+from typing import Dict, Any, Callable, List
 
-class CryptoValidationException(Exception):
-    """Custom exception for crypto ticker anomalies."""
-    pass
+class TickValidator:
+    def __init__(self, check: Callable[[Dict[str, Any]], bool], description: str):
+        self.check = check
+        self.description = description
 
-def validate_ticker(ticker: str) -> str:
-    """
-    Sanitizes and validates crypto tickers using a regex pattern.
-    Rejects anything that isn't a 2-10 character alphanumeric string.
-    """
-    pattern = re.compile(r'^[A-Z0-9]{2,10}$')
-    clean_ticker = str(ticker).strip().upper()
+    def __and__(self, other: "TickValidator") -> "TickValidator":
+        return TickValidator(
+            lambda data: self.check(data) and other.check(data),
+            f"({self.description} and {other.description})"
+        )
 
-    if not pattern.match(clean_ticker):
-        raise CryptoValidationException(f"Ticker '{clean_ticker}' failed sanity check")
-    
-    return clean_ticker
+    def validate(self, data: Dict[str, Any]) -> bool:
+        try:
+            return bool(self.check(data))
+        except (KeyError, TypeError, ValueError):
+            return False
 
-def validate_amount(amount: float) -> float:
-    """
-    Ensures the trade volume is non-negative and finite.
-    """
-    try:
-        val = float(amount)
-        if val < 0:
-            raise ValueError("Negative amount")
-    except (ValueError, TypeError):
-        raise CryptoValidationException(f"Invalid numerical input: {amount}")
-        
-    return val
+# Unusual creative approach: Monadic-style validation rules chaining with bitwise AND (&)
+has_keys = TickValidator(
+    lambda d: all(k in d for k in ("symbol", "price", "volume")),
+    "has_required_keys"
+)
 
-def process_payload(data: dict) -> dict:
-    """
-    Unconventional data gatekeeper for incoming crypto stream.
-    """
-    return {
-        "symbol": validate_ticker(data.get("s", "")), 
-        "quantity": validate_amount(data.get("q", 0)),
-        "timestamp": data.get("t", "unknown")
-    }
+sane_symbol = TickValidator(
+    lambda d: isinstance(d["symbol"], str) and d["symbol"].isalnum() and d["symbol"].isupper(),
+    "sane_uppercase_symbol"
+)
+
+sane_numbers = TickValidator(
+    lambda d: float(d["price"]) > 0.0 and float(d["volume"]) >= 0.0,
+    "positive_numeric_bounds"
+)
+
+finite_values = TickValidator(
+    lambda d: math.isfinite(float(d["price"])) and math.isfinite(float(d["volume"])),
+    "finite_numerical_values"
+)
+
+# Combined validation chain
+strict_crypto_validator = has_keys & sane_symbol & sane_numbers & finite_values
+
+def process_crypto_stream(stream: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Processes and filters out malicious or malformed stream payloads."""
+    sanitized_data = []
+    for raw_tick in stream:
+        if isinstance(raw_tick, dict) and strict_crypto_validator.validate(raw_tick):
+            # Normalizing values to expected float types after validation
+            sanitized_data.append({
+                "symbol": str(raw_tick["symbol"]),
+                "price": float(raw_tick["price"]),
+                "volume": float(raw_tick["volume"])
+            })
+    return sanitized_data
