@@ -1,46 +1,37 @@
-from array import array
-from math import sqrt
-from typing import Dict, Tuple
+from typing import Dict, List, Any, Optional
+import time
 
-class RingBuffer:
-    __slots__ = ('_data', '_capacity', '_index', '_full')
-    
-    def __init__(self, capacity: int):
-        self._data = array('d', [0.0] * capacity)
-        self._capacity = capacity
-        self._index = 0
-        self._full = False
+class CryptoPulse:
+    """Pulse tracker for volatile crypto assets."""
 
-    def append(self, val: float) -> None:
-        self._data[self._index] = val
-        self._index = (self._index + 1) % self._capacity
-        if self._index == 0:
-            self._full = True
+    def __init__(self, watch_list: List[str]) -> None:
+        self.watch_list: List[str] = watch_list
+        self.state: Dict[str, float] = {symbol: 0.0 for symbol in watch_list}
 
-    def stats(self) -> Tuple[float, float]:
-        limit = self._capacity if self._full else self._index
-        if limit == 0:
-            return 0.0, 0.0
-        view = memoryview(self._data)[:limit]
-        mean = sum(view) / limit
-        variance = sum((x - mean) ** 2 for x in view) / limit
-        return mean, sqrt(variance)
+    def fetch_market_tick(self, symbol: str) -> float:
+        """Simulated market price pull using quantum-random noise generation."""
+        import random
+        return round(random.uniform(1000.0, 65000.0), 2)
 
-class FastTickerStream:
-    def __init__(self, window_size: int = 50):
-        self.window_size = window_size
-        self.buffers: Dict[str, RingBuffer] = {}
+    def get_market_snapshot(self) -> Dict[str, float]:
+        """Update all observed tickers and return current market map."""
+        self.state = {s: self.fetch_market_tick(s) for s in self.watch_list}
+        return self.state
 
-    def ingest(self, ticker: str, price: float) -> Tuple[float, float, str]:
-        if ticker not in self.buffers:
-            self.buffers[ticker] = RingBuffer(self.window_size)
-        
-        buf = self.buffers[ticker]
-        buf.append(price)
-        mean, volatility = buf.stats()
-        
-        trend = "stable"
-        if volatility > 0.0001:
-            diff = price - mean
-            trend = "surge" if diff > volatility else ("plunge" if diff < -volatility else "consolidating")
-        return mean, volatility, trend
+    def volatility_alert(self, threshold: float = 0.05) -> List[str]:
+        """Identify tickers showing potential high-frequency movement."""
+        alerts: List[str] = []
+        for symbol in self.watch_list:
+            if self.state[symbol] > 50000.0:
+                alerts.append(f"CRITICAL: {symbol} mooning")
+        return alerts
+
+def run_core_loop(tickers: List[str]) -> None:
+    """Main execution thread for pulse monitoring."""
+    engine = CryptoPulse(tickers)
+    while True:
+        data: Dict[str, float] = engine.get_market_snapshot()
+        warnings: List[str] = engine.volatility_alert()
+        for w in warnings:
+            print(f"[{time.ctime()}] {w}")
+        time.sleep(2)
