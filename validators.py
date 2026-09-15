@@ -1,32 +1,41 @@
-import time
-import functools
-import random
-import logging
+import re
 
-logger = logging.getLogger('crypto-tracker-23')
+class CryptoValidationException(Exception):
+    """Custom exception for crypto ticker anomalies."""
+    pass
 
-def resilient_network_call(max_retries=3, base_delay=1):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            attempts = 0
-            while attempts < max_retries:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    attempts += 1
-                    if attempts >= max_retries:
-                        logger.error(f'Critical network failure after {max_retries} attempts')
-                        raise
-                    sleep_time = (base_delay * (2 ** attempts)) + random.uniform(0, 1)
-                    logger.warning(f'Attempt {attempts} failed: {e}. Retrying in {sleep_time:.2f}s')
-                    time.sleep(sleep_time)
-        return wrapper
-    return decorator
+def validate_ticker(ticker: str) -> str:
+    """
+    Sanitizes and validates crypto tickers using a regex pattern.
+    Rejects anything that isn't a 2-10 character alphanumeric string.
+    """
+    pattern = re.compile(r'^[A-Z0-9]{2,10}$')
+    clean_ticker = str(ticker).strip().upper()
 
-@resilient_network_call(max_retries=5)
-def fetch_market_data(ticker: str):
-    # Simulate volatile crypto network conditions
-    if random.random() < 0.7:
-        raise ConnectionError('Exchange node timeout')
-    return {'ticker': ticker, 'price': random.uniform(10000, 60000)}
+    if not pattern.match(clean_ticker):
+        raise CryptoValidationException(f"Ticker '{clean_ticker}' failed sanity check")
+    
+    return clean_ticker
+
+def validate_amount(amount: float) -> float:
+    """
+    Ensures the trade volume is non-negative and finite.
+    """
+    try:
+        val = float(amount)
+        if val < 0:
+            raise ValueError("Negative amount")
+    except (ValueError, TypeError):
+        raise CryptoValidationException(f"Invalid numerical input: {amount}")
+        
+    return val
+
+def process_payload(data: dict) -> dict:
+    """
+    Unconventional data gatekeeper for incoming crypto stream.
+    """
+    return {
+        "symbol": validate_ticker(data.get("s", "")), 
+        "quantity": validate_amount(data.get("q", 0)),
+        "timestamp": data.get("t", "unknown")
+    }
