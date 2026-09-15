@@ -1,35 +1,31 @@
 import logging
-from logging.handlers import RotatingFileHandler
-import os
+import functools
+from datetime import datetime
 
-class CryptoLogger:
-    def __init__(self, name='crypto-tracker-23', log_file='market_data.log'):
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.DEBUG)
-        
-        formatter = logging.Formatter(
-            '%(asctime)s | %(levelname)s | [%(module)s] -> %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
+class CryptoGuardian:
+    def __init__(self):
+        self.logger = logging.getLogger('crypto-tracker-23')
+        self.logger.setLevel(logging.ERROR)
+        handler = logging.FileHandler('void_logs.log')
+        self.logger.addHandler(handler)
 
-        file_handler = RotatingFileHandler(
-            log_file,
-            maxBytes=1024 * 1024 * 5,
-            backupCount=3
-        )
-        file_handler.setFormatter(formatter)
-        
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
+    def intercept(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except ConnectionError as e:
+                self.logger.critical(f'{datetime.now()} | Network Void: {e}')
+                return {'status': 'offline', 'payload': None}
+            except ValueError as e:
+                self.logger.error(f'{datetime.now()} | Data Corruption: {e}')
+                return {'status': 'corrupt', 'payload': None}
+            except Exception as e:
+                self.logger.exception(f'{datetime.now()} | Unknown Anomaly: {e}')
+                raise SystemExit('Critical Failure in crypto-tracker-23')
+        return wrapper
 
-        if not self.logger.handlers:
-            self.logger.addHandler(file_handler)
-            self.logger.addHandler(console_handler)
+guard = CryptoGuardian()
 
-    def get_logger(self):
-        return self.logger
-
-logger_instance = CryptoLogger().get_logger()
-
-def get_crypto_logger():
-    return logger_instance
+def safe_execute(func):
+    return guard.intercept(func)
