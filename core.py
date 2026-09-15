@@ -1,37 +1,38 @@
 import time
-from decimal import Decimal
-from functools import wraps
+import functools
+from typing import Callable, Any
 
-def rate_limited(calls, period):
-    def decorator(func):
-        history = []
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            now = time.time()
-            nonlocal history
-            history = [t for t in history if now - t < period]
-            if len(history) >= calls:
-                time.sleep(period - (now - history[0]))
-            history.append(time.time())
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
+CACHE_TTL = 30
+_memo_store = {}
 
-class PriceConverter:
-    @staticmethod
-    def to_satoshis(amount: float) -> int:
-        return int(Decimal(str(amount)) * 100_000_000)
+def memoize_crypto_data(func: Callable) -> Callable:
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs) -> Any:
+        key = f"{func.__name__}:{args}:{frozenset(kwargs.items())}"
+        now = time.monotonic()
+        if key in _memo_store:
+            val, expiry = _memo_store[key]
+            if now < expiry:
+                return val
+        result = func(*args, **kwargs)
+        _memo_store[key] = (result, now + CACHE_TTL)
+        return result
+    return wrapper
 
-    @staticmethod
-    def from_satoshis(sats: int) -> float:
-        return float(Decimal(sats) / 100_000_000)
+class PriceAggregator:
+    def __init__(self, tickers: list):
+        self.tickers = tickers
 
-def format_crypto_pair(base: str, quote: str) -> str:
-    return f"{base.upper()}/{quote.upper()}"
+    @memoize_crypto_data
+    def fetch_market_depth(self, symbol: str) -> dict:
+        # Simulate high-latency network IO to exchange API
+        time.sleep(0.5)
+        return {"symbol": symbol, "bid": 50000.0, "ask": 50005.0, "ts": time.time()}
 
-def sanitize_ticker(symbol: str) -> str:
-    return ''.join(filter(str.isalnum, symbol)).upper()
+    def bulk_fetch(self) -> list:
+        return [self.fetch_market_depth(t) for t in self.tickers]
 
-def batch_process(items: list, chunk_size: int):
-    for i in range(0, len(items), chunk_size):
-        yield items[i:i + chunk_size]
+if __name__ == '__main__':
+    agg = PriceAggregator(['BTC', 'ETH'])
+    print(agg.bulk_fetch())
+    print(agg.bulk_fetch())
