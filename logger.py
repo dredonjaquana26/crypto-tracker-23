@@ -1,48 +1,35 @@
 import logging
-import sys
-import threading
-from collections import deque
+from logging.handlers import RotatingFileHandler
+import os
 
-class LockFreeFastLogger(logging.Handler):
-    """Creative lock-free deque buffer logger for high-throughput crypto tracking."""
-    def __init__(self, capacity: int = 10000):
-        super().__init__()
-        self.buffer = deque(maxlen=capacity)
-        self._stop_event = threading.Event()
-        self._worker_thread = threading.Thread(target=self._flush_loop, daemon=True)
-        self._worker_thread.start()
+class CryptoLogger:
+    def __init__(self, name='crypto-tracker-23', log_file='market_data.log'):
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(logging.DEBUG)
+        
+        formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)s | [%(module)s] -> %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
 
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            msg = self.format(record)
-            self.buffer.append(msg)
-        except Exception:
-            self.handleError(record)
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=1024 * 1024 * 5,
+            backupCount=3
+        )
+        file_handler.setFormatter(formatter)
+        
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
 
-    def _flush_loop(self) -> None:
-        while not self._stop_event.is_set():
-            if self.buffer:
-                batch = []
-                while self.buffer and len(batch) < 500:
-                    try:
-                        batch.append(self.buffer.popleft())
-                    except IndexError:
-                        break
-                if batch:
-                    sys.stdout.write("\n".join(batch) + "\n")
-                    sys.stdout.flush()
-            threading.Event().wait(0.01)
+        if not self.logger.handlers:
+            self.logger.addHandler(file_handler)
+            self.logger.addHandler(console_handler)
 
-    def close(self) -> None:
-        self._stop_event.set()
-        self._worker_thread.join(timeout=1.0)
-        super().close()
+    def get_logger(self):
+        return self.logger
 
-def setup_fast_logger(name: str = "crypto_tracker") -> logging.Logger:
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
-    handler = LockFreeFastLogger()
-    formatter = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    return logger
+logger_instance = CryptoLogger().get_logger()
+
+def get_crypto_logger():
+    return logger_instance
