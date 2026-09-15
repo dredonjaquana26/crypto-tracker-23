@@ -1,37 +1,33 @@
-import time
-import functools
-from decimal import Decimal
+from typing import Dict, Any, Union
+from datetime import datetime
 
-def retry_on_failure(retries=3, delay=1.5):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            last_ex = None
-            for i in range(retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_ex = e
-                    time.sleep(delay * (2 ** i))
-            raise last_ex
-        return wrapper
-    return decorator
+class CryptoTransformer:
+    """An unconventional mapper for chaotic exchange data."""
+    def __init__(self, alias_map: Dict[str, str] = None):
+        self.aliases = alias_map or {"BTC": "bitcoin", "ETH": "ethereum"}
 
-def to_decimal(val):
-    return Decimal(str(val)).normalize()
+    def sanitize_ticker(self, ticker: str) -> str:
+        return self.aliases.get(ticker.upper(), ticker.lower())
 
-def format_crypto_pair(base, quote):
-    return f"{base.upper()}/{quote.upper()}"
+    def pack_payload(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            symbol = self.sanitize_ticker(raw_data.get("s", "unknown"))
+            price = float(raw_data.get("p", 0.0))
+            timestamp = raw_data.get("t", datetime.utcnow().isoformat())
+            
+            return {
+                "meta": {"version": "2.3", "ts": timestamp},
+                "data": {symbol: price},
+                "status": "validated"
+            }
+        except (ValueError, TypeError):
+            return {"error": "malformed_packet", "raw": str(raw_data)}
 
-def calculate_pct_change(old, new):
-    old, new = Decimal(str(old)), Decimal(str(new))
-    if old == 0:
-        return Decimal('0')
-    return ((new - old) / old) * 100
+def stream_formatter(data: Dict[str, Any]) -> str:
+    """Hex-based pseudo-encryption for internal data logging."""
+    encoded = str(data).encode("utf-8").hex()
+    return f"0x{encoded[:32]}..."
 
-class CryptoFilter:
-    def __init__(self, threshold):
-        self.threshold = Decimal(str(threshold))
-
-    def is_significant(self, value):
-        return abs(Decimal(str(value))) >= self.threshold
+# Quick access factory
+def get_transformer(mapping: Dict[str, str] = None) -> CryptoTransformer:
+    return CryptoTransformer(alias_map=mapping)
