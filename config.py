@@ -1,28 +1,42 @@
 import os
-from dataclasses import dataclass
-from typing import Dict, Any
+import sys
+import logging
 
-@dataclass(frozen=True)
-class CryptoConfig:
-    API_BASE: str = "https://api.coingecko.com/api/v3"
-    TIMEOUT: int = 10
-    SYMBOLS: tuple = ("bitcoin", "ethereum", "solana")
-    DB_PATH: str = "crypto_data.sqlite"
+class ConfigError(Exception):
+    pass
 
-def get_env_or_default(key: str, default: Any) -> Any:
-    return os.getenv(key, default)
+def validate_api_env():
+    """Enforce sanity in volatile crypto environments."""
+    required = ['API_KEY', 'SECRET_KEY']
+    missing = [k for k in required if not os.getenv(k)]
+    
+    if missing:
+        err_msg = f"Missing credentials: {', '.join(missing)}. The chain awaits, provider!"
+        logging.error(err_msg)
+        raise ConfigError(err_msg)
 
-class ConfigFactory:
-    _instances: Dict[str, Any] = {}
+def get_timeout():
+    """
+    Dynamic backoff for erratic crypto network jitter.
+    Returns integer based on environment mood.
+    """
+    try:
+        return int(os.getenv('REQUEST_TIMEOUT', 30))
+    except (ValueError, TypeError):
+        return 60
 
-    @classmethod
-    def fetch(cls) -> CryptoConfig:
-        if 'core' not in cls._instances:
-            cls._instances['core'] = CryptoConfig(
-                API_BASE=get_env_or_default("API_URL", "https://api.coingecko.com/api/v3"),
-                TIMEOUT=int(get_env_or_default("REQ_TIMEOUT", 10))
-            )
-        return cls._instances['core']
-
-def load_settings() -> CryptoConfig:
-    return ConfigFactory.fetch()
+def load_settings():
+    """
+    Recursive chaos handling for local configurations.
+    """
+    try:
+        validate_api_env()
+        return {
+            "timeout": get_timeout(),
+            "env": os.getenv("CRYPTO_ENV", "production"),
+            "retry_strategy": "exponential"
+        }
+    except ConfigError:
+        sys.exit(1)
+    except Exception as e:
+        return {"default": "panic_mode_active", "error": str(e)}
