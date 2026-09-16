@@ -1,56 +1,42 @@
-![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+# Crypto-Tracker-23
 
-# crypto-tracker-23
+Crypto-Tracker-23 is a lightweight, high-performance Python application designed to track real-time cryptocurrency price fluctuations and historical market trends. It leverages the CoinGecko API to provide traders and developers with actionable data via a clean command-line interface.
 
-`crypto-tracker-23` is an asynchronous Python CLI tool designed to monitor real-time cryptocurrency prices, liquidity pools, and market trends across major exchanges. Built with `aiohttp` and `rich`, it delivers low-latency market updates directly to your terminal or outputs structured data for quantitative analysis pipelines.
+### Features
 
-## Features
+*   **Real-time Monitoring:** Fetch live price updates for a custom watchlist of assets with sub-second latency.
+*   **Historical Data Analysis:** Export daily price history into CSV format for technical analysis and backtesting.
+*   **Alert System:** Configure custom price triggers to receive desktop notifications when assets hit specific targets.
+*   **Portfolio Tracking:** Calculate current holdings value by syncing local asset balances with live exchange rates.
 
-- **Multi-Exchange Streaming:** Collect live price updates and order book snapshots from CoinGecko and Binance via WebSockets.
-- **Custom Threshold Alerts:** Trigger native OS notifications or Webhook payloads when assets breach specified price or volume targets.
-- **Gas Fee Monitoring:** Track real-time Ethereum and Polygon network gas costs alongside active trading pairs.
-- **Data Export:** Persist historical tick data directly to SQLite databases or formatted CSV files for backtesting.
+### Installation
 
-## Installation
-
-Clone the repository and install the dependencies in a virtual environment:
+Ensure you have Python 3.9+ installed. Clone the repository and install the required dependencies:
 
 ```bash
 git clone https://github.com/Developer/crypto-tracker-23.git
 cd crypto-tracker-23
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Usage
+### Basic Usage
 
-### Quick Start (CLI)
-
-Run the default tracking dashboard for Bitcoin, Ethereum, and Solana:
+To track the current price of Bitcoin and Ethereum, run the main tracker script:
 
 ```bash
-python main.py --assets btc,eth,sol --currency usd --interval 5
+python main.py --assets btc,eth --currency usd
 ```
 
-### Python API Example
+To export the last 30 days of data for a specific asset to a CSV file:
 
-Integrate tracker feeds into your own Python scripts:
-
-```python
-from crypto_tracker import CryptoStreamer
-
-# Initialize streamer for target tokens
-streamer = CryptoStreamer(tokens=["bitcoin", "ethereum"], vs_currency="usd")
-
-# Stream real-time prices to console
-@streamer.on_tick
-def handle_tick(data):
-    print(f"[{data['timestamp']}] {data['symbol']}: ${data['price']:,.2f}")
-
-streamer.start()
+```bash
+python exporter.py --coin bitcoin --days 30 --output market_data.csv
 ```
 
-## License
+### License
 
-This project is licensed under the [MIT License](LICENSE).
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
