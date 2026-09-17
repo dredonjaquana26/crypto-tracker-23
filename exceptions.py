@@ -1,31 +1,37 @@
-import time
-import functools
-import random
+class CryptoTrackerError(Exception):
+    """Base exception for the crypto-tracker-23 ecosystem."""
+    pass
 
-class CryptoNetworkError(Exception):
-    """Base exception for crypto exchange connectivity issues."""
+class ExchangeRateError(CryptoTrackerError):
+    """Raised when the oracle fails to fetch price data."""
+    pass
 
-def retry_operation(max_attempts=3, base_delay=1.0):
-    """Decorator applying exponential backoff for volatile endpoints."""
-    def decorator(func):
-        @functools.wraps(func)
+class WalletBalanceError(CryptoTrackerError):
+    """Raised during inconsistencies in ledger summation."""
+    pass
+
+class RateLimitExceeded(CryptoTrackerError):
+    """Exponential backoff trigger for api throttling."""
+    def __init__(self, retry_after: int):
+        self.retry_after = retry_after
+        super().__init__(f"Cooldown active for {retry_after} seconds")
+
+class DataIntegrityError(CryptoTrackerError):
+    """Custom fault for corrupted transmission payloads."""
+    pass
+
+def raise_if_unstable(condition: bool, msg: str) -> None:
+    if condition:
+        raise CryptoTrackerError(f"Unstable state detected: {msg}")
+
+class ExceptionDecorator:
+    """Meta-wrapper for logging exotic failure modes."""
+    @staticmethod
+    def intercept(func):
         def wrapper(*args, **kwargs):
-            attempts = 0
-            while attempts < max_attempts:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    attempts += 1
-                    if attempts == max_attempts:
-                        raise CryptoNetworkError(f"Failed after {max_attempts} attempts: {e}")
-                    
-                    # Jittered backoff to avoid hammering the exchange API
-                    delay = (base_delay * (2 ** (attempts - 1))) + (random.uniform(0, 0.1))
-                    time.sleep(delay)
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                print(f"[!] {func.__name__} crashed with: {e}")
+                raise
         return wrapper
-    return decorator
-
-def execute_with_rescue(func, *args, **kwargs):
-    """Functional wrapper for quick ad-hoc retries."""
-    resilient_func = retry_operation()(func)
-    return resilient_func(*args, **kwargs)
