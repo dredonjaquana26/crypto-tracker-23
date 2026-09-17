@@ -1,31 +1,39 @@
 import logging
-import functools
-from datetime import datetime
+from logging.handlers import RotatingFileHandler
+import sys
+from pathlib import Path
 
-class CryptoGuardian:
-    def __init__(self):
-        self.logger = logging.getLogger('crypto-tracker-23')
-        self.logger.setLevel(logging.ERROR)
-        handler = logging.FileHandler('void_logs.log')
+class CryptoLogger:
+    """Custom logger for crypto-tracker-23 with file rotation."""
+    def __init__(self, name: str = 'crypto_tracker'):
+        self.log_dir = Path('logs')
+        self.log_dir.mkdir(exist_ok=True)
+        self.log_file = self.log_dir / f'{name}.log'
+        
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(logging.DEBUG)
+        
+        formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+
+        # Rotate at 5MB, keep 3 historical backups
+        handler = RotatingFileHandler(
+            self.log_file, 
+            maxBytes=5*1024*1024, 
+            backupCount=3
+        )
+        handler.setFormatter(formatter)
+        
+        console = logging.StreamHandler(sys.stdout)
+        console.setFormatter(formatter)
+
         self.logger.addHandler(handler)
+        self.logger.addHandler(console)
 
-    def intercept(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except ConnectionError as e:
-                self.logger.critical(f'{datetime.now()} | Network Void: {e}')
-                return {'status': 'offline', 'payload': None}
-            except ValueError as e:
-                self.logger.error(f'{datetime.now()} | Data Corruption: {e}')
-                return {'status': 'corrupt', 'payload': None}
-            except Exception as e:
-                self.logger.exception(f'{datetime.now()} | Unknown Anomaly: {e}')
-                raise SystemExit('Critical Failure in crypto-tracker-23')
-        return wrapper
+    def get_logger(self) -> logging.Logger:
+        return self.logger
 
-guard = CryptoGuardian()
-
-def safe_execute(func):
-    return guard.intercept(func)
+def setup_global_logger():
+    return CryptoLogger().get_logger()
