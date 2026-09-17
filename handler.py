@@ -1,36 +1,30 @@
-import time
 import logging
-from typing import Dict, List
+from typing import Dict, Any, Callable
 
 class CryptoHandler:
-    def __init__(self, tickers: List[str]):
-        self.tickers = tickers
-        self.cache = {}
+    def __init__(self):
+        self.registry: Dict[str, Callable] = {}
         self.logger = logging.getLogger('crypto-tracker-23')
 
-    def fetch_market_state(self, adapter) -> Dict[str, float]:
-        """Aggregates market state using a functional pipeline."""
-        pipeline = [self._poll_adapter, self._normalize_data]
-        data = self.tickers
-        for step in pipeline:
-            data = step(data, adapter)
-        return data
+    def register_hook(self, event: str, callback: Callable):
+        self.registry[event] = callback
 
-    def _poll_adapter(self, tickers: List[str], adapter) -> Dict[str, float]:
-        return {t: adapter.get_price(t) for t in tickers}
-
-    def _normalize_data(self, raw_data: Dict[str, float], _) -> Dict[str, float]:
-        return {k: round(float(v), 2) for k, v in raw_data.items() if v}
-
-    def sweep_stale_records(self, max_age: int = 3600):
-        """Cleanup of legacy cache via dictionary comprehension."""
-        now = time.time()
-        self.cache = {k: v for k, v in self.cache.items() if now - v['ts'] < max_age}
-
-    def run_cycle(self, adapter):
+    def execute(self, event: str, data: Any):
+        action = self.registry.get(event)
+        if not action:
+            self.logger.warning(f'no hook found for {event}')
+            return None
         try:
-            snapshot = self.fetch_market_state(adapter)
-            self.cache.update({k: {'val': v, 'ts': time.time()} for k, v in snapshot.items()})
-            self.sweep_stale_records()
+            return action(data)
         except Exception as e:
-            self.logger.error(f"cycle failure: {e}")
+            self.logger.error(f'execution failure in {event}: {e}')
+            raise
+
+    def pipeline(self, data: Dict[str, Any], sequence: list[str]):
+        result = data
+        for step in sequence:
+            result = self.execute(step, result)
+        return result
+
+    def __repr__(self):
+        return f'<CryptoHandler status="{len(self.registry)} hooks active">'
