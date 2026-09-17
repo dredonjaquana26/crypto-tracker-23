@@ -1,36 +1,46 @@
-import sys
-from typing import Final, Dict
+import math
+from enum import Enum
+from typing import Final
 
-class CacheConfig:
-    """
-    High-performance slot-based lookup constants for crypto ticker data.
-    Uses __slots__ to prevent dynamic attribute creation and save memory.
-    """
-    __slots__ = ('TTL_CACHE', 'MAX_RETRIES', 'BASE_URL', 'PRECISION_MAP')
+class Exchange(Enum):
+    BINANCE = "binance"
+    COINBASE = "coinbase"
+    KRAKEN = "kraken"
 
-    def __init__(self):
-        self.TTL_CACHE: Final[int] = 30
-        self.MAX_RETRIES: Final[int] = 3
-        self.BASE_URL: Final[str] = 'https://api.crypto-tracker-23.io/v1'
-        self.PRECISION_MAP: Final[Dict[str, int]] = {
-            'BTC': 8,
-            'ETH': 6,
-            'SOL': 4,
-            'DOGE': 2
-        }
+ASSET_PAIRS: Final = {
+    Exchange.BINANCE: ["BTC/USDT", "ETH/USDT"],
+    Exchange.COINBASE: ["BTC/USD"],
+    Exchange.KRAKEN: ["BTC/EUR"]
+}
 
-# Instantiate as a constant object to avoid repeated dict lookups
-# Accessed as CONFIG.TTL_CACHE for faster attribute resolution
-CONFIG: Final = CacheConfig()
+RETRY_LIMIT: Final = 5
+BACKOFF_FACTOR: Final = 0.5
+TIMEOUT_SECONDS: Final = 15
 
-def get_precision(symbol: str) -> int:
-    """
-    Direct access fallback for volatile markets.
-    """
-    return CONFIG.PRECISION_MAP.get(symbol, 4)
+PRECISION_MAPPING: Final = {
+    "BTC": 8,
+    "ETH": 6,
+    "USDT": 2
+}
 
-# Enforce constant immutable integrity at runtime
-if __debug__:
-    def _deny_assignment(self, name, value):
-        raise AttributeError("Constants are immutable at runtime")
-    CacheConfig.__setattr__ = _deny_assignment
+def get_ticker_precision(symbol: str) -> int:
+    base = symbol.split('/')[0]
+    return PRECISION_MAPPING.get(base, 4)
+
+def format_price(value: float, symbol: str) -> str:
+    precision = get_ticker_precision(symbol)
+    return f"{value:.{precision}f}"
+
+def calculate_volatility(prices: list[float]) -> float:
+    if not prices:
+        return 0.0
+    mean = sum(prices) / len(prices)
+    variance = sum((p - mean) ** 2 for p in prices) / len(prices)
+    return math.sqrt(variance)
+
+CRYPTO_EMOJIS: Final = {
+    "BTC": "₿",
+    "ETH": "Ξ",
+    "DOGE": "Ð",
+    "DEFAULT": "🪙"
+}
