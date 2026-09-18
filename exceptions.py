@@ -1,37 +1,36 @@
-class CryptoTrackerError(Exception):
-    """Base exception for the crypto-tracker-23 ecosystem."""
-    pass
+import time
+import functools
+import random
+import logging
 
-class ExchangeRateError(CryptoTrackerError):
-    """Raised when the oracle fails to fetch price data."""
-    pass
+logger = logging.getLogger('crypto-tracker-23')
 
-class WalletBalanceError(CryptoTrackerError):
-    """Raised during inconsistencies in ledger summation."""
-    pass
+class NetworkRetry:
+    def __init__(self, max_retries=3, base_delay=1.0, backoff=2.0):
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+        self.backoff = backoff
 
-class RateLimitExceeded(CryptoTrackerError):
-    """Exponential backoff trigger for api throttling."""
-    def __init__(self, retry_after: int):
-        self.retry_after = retry_after
-        super().__init__(f"Cooldown active for {retry_after} seconds")
-
-class DataIntegrityError(CryptoTrackerError):
-    """Custom fault for corrupted transmission payloads."""
-    pass
-
-def raise_if_unstable(condition: bool, msg: str) -> None:
-    if condition:
-        raise CryptoTrackerError(f"Unstable state detected: {msg}")
-
-class ExceptionDecorator:
-    """Meta-wrapper for logging exotic failure modes."""
-    @staticmethod
-    def intercept(func):
+    def __call__(self, func):
+        @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                print(f"[!] {func.__name__} crashed with: {e}")
-                raise
+            retries = 0
+            delay = self.base_delay
+            while retries < self.max_retries:
+                try:
+                    return func(*args, **kwargs)
+                except (ConnectionError, TimeoutError) as e:
+                    retries += 1
+                    if retries >= self.max_retries:
+                        logger.error(f"Final attempt failed for {func.__name__}: {e}")
+                        raise
+                    jitter = random.uniform(0, 0.1 * delay)
+                    sleep_time = delay + jitter
+                    logger.warning(f"Retry {retries}/{self.max_retries} for {func.__name__} after {sleep_time:.2f}s")
+                    time.sleep(sleep_time)
+                    delay *= self.backoff
         return wrapper
+
+class CryptoNetworkError(Exception):
+    """Custom exception for crypto-tracker-23 network anomalies"""
+    pass
