@@ -1,36 +1,76 @@
-import time
-import functools
-import random
-import logging
+"""Custom exception hierarchy and diagnostic registry for crypto tracker."""
 
-logger = logging.getLogger('crypto-tracker-23')
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
-class NetworkRetry:
-    def __init__(self, max_retries=3, base_delay=1.0, backoff=2.0):
-        self.max_retries = max_retries
-        self.base_delay = base_delay
-        self.backoff = backoff
 
-    def __call__(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            retries = 0
-            delay = self.base_delay
-            while retries < self.max_retries:
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    retries += 1
-                    if retries >= self.max_retries:
-                        logger.error(f"Final attempt failed for {func.__name__}: {e}")
-                        raise
-                    jitter = random.uniform(0, 0.1 * delay)
-                    sleep_time = delay + jitter
-                    logger.warning(f"Retry {retries}/{self.max_retries} for {func.__name__} after {sleep_time:.2f}s")
-                    time.sleep(sleep_time)
-                    delay *= self.backoff
-        return wrapper
+class CryptoTrackerError(Exception):
+    """Base exception for all crypto-tracker domain errors."""
 
-class CryptoNetworkError(Exception):
-    """Custom exception for crypto-tracker-23 network anomalies"""
-    pass
+    code = "E1000"
+
+    def __init__(
+        self,
+        message: str,
+        symbol: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(message)
+        self.message = message
+        self.symbol = symbol.upper() if symbol else "N/A"
+        self.context = context or {}
+        self.timestamp = datetime.now(timezone.utc).isoformat()
+
+    def snapshot(self) -> Dict[str, Any]:
+        """Generate structured diagnostic payload for telemetry."""
+        return {
+            "error_type": self.__class__.__name__,
+            "code": self.code,
+            "message": self.message,
+            "symbol": self.symbol,
+            "context": self.context,
+            "timestamp": self.timestamp,
+        }
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} [{self.code}] symbol={self.symbol} msg={self.message!r}>"
+
+
+class RateLimitExceededError(CryptoTrackerError):
+    """Raised when upstream crypto exchange rate limit is hit."""
+
+    code = "E2001"
+
+    def __init__(
+        self,
+        provider: str,
+        retry_after: float,
+        symbol: Optional[str] = None,
+    ):
+        msg = f"Rate limit reached for provider '{provider}'. Retry in {retry_after}s"
+        super().__init__(msg, symbol=symbol, context={"provider": provider, "retry_after": retry_after})
+        self.retry_after = retry_after
+
+
+class InvalidTickerError(CryptoTrackerError):
+    """Raised when a crypto pair or asset ticker is unrecognized."""
+
+    code = "E3001"
+
+
+class TelemetryParseError(CryptoTrackerError):
+    """Raised when WebSocket payload framing or JSON parsing fails."""
+
+    code = "E4004"
+
+
+def raise_for_status_code(status_code: int, provider: str, symbol: Optional[str] = None) -> None:
+    """Helper dispatcher mapping HTTP status codes to domain exceptions."""
+    if status_code == 429:
+        raise RateLimitExceededError(provider=provider, retry_after=60.0, symbol=symbol)
+    if status_code == 404:
+        raise InvalidTickerError(f"Ticker for symbol '{symbol}' not found on provider '{provider}'", symbol=symbol)
+    if status_code >= 400:
+        raise CryptoTrackerError(
+            f"HTTP error {status_code} from provider '{provider}'", symbol=symbol, context={"status": status_code}
+        )
