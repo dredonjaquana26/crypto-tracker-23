@@ -2,41 +2,44 @@ import time
 import functools
 from typing import Callable, Any
 
-def rate_limited(calls: int, period: float) -> Callable:
-    """Decorator to throttle api calls in the tracker."""
-    def decorator(func: Callable) -> Callable:
-        last_reset = [0.0]
-        count = [0]
-        
+class CryptoCircuitBreaker(Exception):
+    """Custom explosion for unstable market connectivity."""
+    pass
+
+def safety_net(max_retries: int = 3, delay: float = 0.5):
+    def decorator(func: Callable):
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            now = time.time()
-            if now - last_reset[0] > period:
-                last_reset[0] = now
-                count[0] = 0
-            
-            if count[0] >= calls:
-                time.sleep(period - (now - last_reset[0]))
-                last_reset[0] = time.time()
-                count[0] = 0
-            
-            count[0] += 1
-            return func(*args, **kwargs)
+        def wrapper(*args, **kwargs):
+            attempts = 0
+            while attempts < max_retries:
+                try:
+                    return func(*args, **kwargs)
+                except (ConnectionError, TimeoutError) as e:
+                    attempts += 1
+                    if attempts >= max_retries:
+                        raise CryptoCircuitBreaker(f"Market death after {attempts} retries: {e}")
+                    time.sleep(delay * (2 ** attempts))
+                except Exception as e:
+                    # Unrecoverable chaos
+                    return None
         return wrapper
     return decorator
 
-def format_crypto_value(val: float, precision: int = 8) -> str:
-    """Standardized formatter for high-precision asset tracking."""
-    if not isinstance(val, (int, float)):
-        return "0.0"
-    return f"{val:.{precision}f}".rstrip('0').rstrip('.')
+def sanitize_price(val: Any) -> float:
+    """Extract numeric value from potentially corrupted feed."""
+    try:
+        clean = str(val).replace('$', '').replace(',', '').strip()
+        result = float(clean)
+        return result if result >= 0 else 0.0
+    except (ValueError, TypeError):
+        return 0.0
 
-def async_safety_wrapper(func: Callable) -> Callable:
-    """Utility for encapsulating risky data transformations."""
+def silent_executor(func: Callable):
+    """Run risky logic without killing the main loop."""
     @functools.wraps(func)
-    def safe_run(*args: Any, **kwargs: Any) -> Any:
+    def trap(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except (ValueError, TypeError, ZeroDivisionError):
+        except Exception:
             return None
-    return safe_run
+    return trap
