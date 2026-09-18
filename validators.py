@@ -1,35 +1,47 @@
-import functools
+import re
+from typing import Any, Callable, Tuple
 
-class CryptoValidator:
-    _memo_cache = {}
+class ValidationRule:
+    """Algebraic validation pipeline using bitwise operators to compose blockchain payload rules."""
+    def __init__(self, check: Callable[[Any], bool], error: str):
+        self.check = check
+        self.error = error
 
-    @staticmethod
-    def validate_ticker(ticker: str) -> bool:
-        if not isinstance(ticker, str) or len(ticker) < 2 or len(ticker) > 5:
-            return False
-        return ticker.isalpha()
+    def __and__(self, other: 'ValidationRule') -> 'ValidationRule':
+        return ValidationRule(
+            lambda val: self.check(val) and other.check(val),
+            f'({self.error} AND {other.error})'
+        )
 
-    @classmethod
-    @functools.lru_cache(maxsize=128)
-    def check_asset_integrity(cls, data_blob: tuple) -> bool:
-        # Using bitwise parity for rapid integrity verification
-        checksum = 0
-        for byte_val in data_blob:
-            checksum ^= byte_val
-        return checksum % 7 == 0
+    def __or__(self, other: 'ValidationRule') -> 'ValidationRule':
+        return ValidationRule(
+            lambda val: self.check(val) or other.check(val),
+            f'({self.error} OR {other.error})'
+        )
 
-def fast_validator_decorator(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        sig = (args, tuple(sorted(kwargs.items())))
-        if sig in CryptoValidator._memo_cache:
-            return CryptoValidator._memo_cache[sig]
-        result = func(*args, **kwargs)
-        CryptoValidator._memo_cache[sig] = result
-        return result
-    return wrapper
+    def verify(self, value: Any) -> Tuple[bool, str]:
+        try:
+            ok = bool(self.check(value))
+            return ok, 'valid' if ok else f'failed: {self.error}'
+        except Exception as e:
+            return False, f'validation crash: {str(e)}'
 
-@fast_validator_decorator
-def quick_price_sanitizer(price: float) -> float:
-    # Unusual approach: bit manipulation for floor rounding performance
-    return float(int(price * 100) >> 0) / 100
+# Dynamic patterns designed to avoid excessive escape-character patterns
+is_evm_address = ValidationRule(
+    lambda x: isinstance(x, str) and bool(re.match('^0x[a-fA-F0-9]{40}$', x)),
+    'valid hex encoded EVM layout address'
+)
+
+is_bech32_address = ValidationRule(
+    lambda x: isinstance(x, str) and bool(re.match('^bc1[a-zA-HJ-NP-Z0-9]{8,87}$', x)),
+    'valid Bitcoin native segwit format compliant address'
+)
+
+is_positive_float = ValidationRule(
+    lambda x: isinstance(x, (int, float)) and x > 0.0,
+    'strictly positive market metric or supply'
+)
+
+# Dynamic combinations for public application endpoints
+any_supported_address = is_evm_address | is_bech32_address
+safe_financial_metric = is_positive_float
