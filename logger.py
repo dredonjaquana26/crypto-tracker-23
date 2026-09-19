@@ -1,39 +1,32 @@
 import logging
+import os
 from logging.handlers import RotatingFileHandler
-import sys
-from pathlib import Path
+from datetime import datetime
 
-class CryptoLogger:
-    """Custom logger for crypto-tracker-23 with file rotation."""
-    def __init__(self, name: str = 'crypto_tracker'):
-        self.log_dir = Path('logs')
-        self.log_dir.mkdir(exist_ok=True)
-        self.log_file = self.log_dir / f'{name}.log'
-        
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.DEBUG)
-        
-        formatter = logging.Formatter(
-            '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
+class CryptoFormatter(logging.Formatter):
+    def format(self, record):
+        record.msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 🪙 {record.msg}"
+        return super().format(record)
 
-        # Rotate at 5MB, keep 3 historical backups
+def setup_crypto_logger(name='crypto-tracker-23', log_file='market_data.log'):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+
+    if not logger.handlers:
         handler = RotatingFileHandler(
-            self.log_file, 
-            maxBytes=5*1024*1024, 
+            log_file, 
+            maxBytes=5 * 1024 * 1024, 
             backupCount=3
         )
-        handler.setFormatter(formatter)
         
-        console = logging.StreamHandler(sys.stdout)
+        formatter = CryptoFormatter('%(levelname)s: %(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        
+        console = logging.StreamHandler()
         console.setFormatter(formatter)
+        logger.addHandler(console)
 
-        self.logger.addHandler(handler)
-        self.logger.addHandler(console)
+    return logger
 
-    def get_logger(self) -> logging.Logger:
-        return self.logger
-
-def setup_global_logger():
-    return CryptoLogger().get_logger()
+logger = setup_crypto_logger()
