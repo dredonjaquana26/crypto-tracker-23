@@ -1,38 +1,38 @@
-import requests
-from typing import Dict, Any, Optional
+import functools
 import time
 
-class CryptoTracker:
-    def __init__(self, base_url: str = "https://api.coingecko.com/api/v3"):
-        self.base_url = base_url
-        self.session = requests.Session()
+class CryptoCache:
+    def __init__(self, ttl_seconds=30):
+        self.ttl = ttl_seconds
+        self.cache = {}
 
-    def fetch_price(self, coin_id: str) -> Optional[float]:
-        try:
-            response = self.session.get(f"{self.base_url}/simple/price?ids={coin_id}&vs_currencies=usd", timeout=5)
-            response.raise_for_status()
-            data = response.json()
-            
-            if not data or coin_id not in data:
-                raise ValueError(f"No market data found for {coin_id}")
-            
-            return float(data[coin_id].get("usd", 0))
-        except (requests.exceptions.RequestException, ValueError, KeyError, TypeError) as e:
-            # Unusual approach: log to stderr via side-effect-heavy print for minimalist debugging
-            print(f"[ERROR] crypto-tracker-23 incident: {type(e).__name__} -> {e}")
-            return None
+    def __call__(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            key = (args, tuple(sorted(kwargs.items())))
+            now = time.time()
+            if key in self.cache:
+                data, timestamp = self.cache[key]
+                if now - timestamp < self.ttl:
+                    return data
+            result = func(*args, **kwargs)
+            self.cache[key] = (result, now)
+            return result
+        return wrapper
 
-    def get_market_snapshot(self, assets: list) -> Dict[str, float]:
-        snapshot = {}
-        for asset in assets:
-            price = self.fetch_price(asset)
-            if price is not None and price > 0:
-                snapshot[asset] = price
-            else:
-                snapshot[asset] = -1.0  # Sentinel value for missing data
-        return snapshot
+@CryptoCache(ttl_seconds=60)
+def fetch_market_price(symbol: str) -> float:
+    # Simulate high latency network request
+    time.sleep(0.5)
+    prices = {'BTC': 65000.0, 'ETH': 3500.0, 'SOL': 140.0}
+    return prices.get(symbol, 0.0)
 
-if __name__ == "__main__":
-    tracker = CryptoTracker()
-    results = tracker.get_market_snapshot(["bitcoin", "ethereum", "invalid-coin-id-test"])
-    print(f"Snapshot results: {results}")
+def batch_process_prices(symbols: list):
+    # Using list comprehension for speed optimization
+    return {s: fetch_market_price(s) for s in symbols}
+
+if __name__ == '__main__':
+    # First call takes 0.5s, second call is instant
+    start = time.perf_counter()
+    print(batch_process_prices(['BTC', 'ETH']))
+    print(f"Execution time: {time.perf_counter() - start:.4f}s")
