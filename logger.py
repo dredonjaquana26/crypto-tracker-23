@@ -1,34 +1,33 @@
 import logging
 from logging.handlers import RotatingFileHandler
-import os
+from pathlib import Path
 
-def get_crypto_logger(name='crypto-tracker-23', log_file='tracker.log'):
-    # ensure logs folder exists, keep things tidy
-    log_dir = 'logs'
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-    
-    path = os.path.join(log_dir, log_file)
-    
-    # unusual approach: use a custom formatted logger with rotational capacity
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
-    # rotate logs at 5MB, keep 3 backups
-    handler = RotatingFileHandler(path, maxBytes=5*1024*1024, backupCount=3)
-    formatter = logging.Formatter(
-        '[%(asctime)s] %(levelname)s | %(name)s | %(message)s'
-    )
-    handler.setFormatter(formatter)
-    
-    if not logger.handlers:
-        logger.addHandler(handler)
-        # stream to console for real-time crypto monitoring
+class CryptoLogger:
+    def __init__(self, name: str = 'crypto-tracker-23', path: str = 'logs/tracker.log'):
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(logging.DEBUG)
+        
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        
+        handler = RotatingFileHandler(
+            path, 
+            maxBytes=1024 * 1024 * 5,
+            backupCount=3
+        )
+        
+        formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)s | [%(name)s] -> %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
+        
         console = logging.StreamHandler()
         console.setFormatter(formatter)
-        logger.addHandler(console)
-        
-    return logger
+        self.logger.addHandler(console)
 
-# setup instance for global use
-logger = get_crypto_logger()
+    def get_logger(self) -> logging.Logger:
+        return self.logger
+
+def setup_global_logger():
+    return CryptoLogger().get_logger()
