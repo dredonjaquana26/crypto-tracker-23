@@ -1,43 +1,36 @@
 import time
-import random
-from functools import wraps
-from typing import Callable, Any, Tuple, Type
+import functools
+from typing import Callable, Any
 
-def fibonacci_jitter_retry(
-    max_retries: int = 5,
-    base_delay: float = 1.0,
-    exceptions: Tuple[Type[BaseException], ...] = (Exception,)
-) -> Callable:
-    """
-    An unconventional decorator that uses a Fibonacci sequence generator
-    with custom jitter to retry failing network operations.
-    """
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        @wraps(func)
+def throttle(seconds: int) -> Callable:
+    def decorator(func: Callable) -> Callable:
+        last_called = 0
+        @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            def fib_generator():
-                a, b = base_delay, base_delay
-                while True:
-                    yield a
-                    a, b = b, a + b
-\            delay_gen = fib_generator()
-            last_exception = None
-
-            for attempt in range(max_retries + 1):
-                try:
-                    return func(*args, **kwargs)
-                except exceptions as err:
-                    last_exception = err
-                    if attempt == max_retries:
-                        break
-                    
-                    fib_wait = next(delay_gen)
-                    jitter = random.uniform(0.1, 0.4) * fib_wait
-                    sleep_time = fib_wait + jitter
-                    
-                    time.sleep(sleep_time)
-            
-            if last_exception:
-                raise last_exception
+            nonlocal last_called
+            elapsed = time.time() - last_called
+            if elapsed < seconds:
+                time.sleep(seconds - elapsed)
+            last_called = time.time()
+            return func(*args, **kwargs)
         return wrapper
     return decorator
+
+def sanitize_ticker(symbol: str) -> str:
+    return symbol.strip().upper().replace('/', '_')
+
+class DataReshaper:
+    def __init__(self, data: dict):
+        self.data = data
+
+    def extract_price(self, key: str = 'price') -> float:
+        try:
+            return float(self.data.get(key, 0.0))
+        except (ValueError, TypeError):
+            return 0.0
+
+    def to_tuple(self) -> tuple:
+        return tuple(self.data.values())
+
+def format_crypto_log(symbol: str, price: float) -> str:
+    return f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {symbol.ljust(8)} : ${price:>12.4f}"
