@@ -1,38 +1,44 @@
-import functools
 import time
+import functools
+from decimal import Decimal
 
-class CryptoCache:
-    def __init__(self, ttl_seconds=30):
-        self.ttl = ttl_seconds
-        self.cache = {}
-
-    def __call__(self, func):
+def retry_on_failure(retries=3, delay=1.5):
+    def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            key = (args, tuple(sorted(kwargs.items())))
-            now = time.time()
-            if key in self.cache:
-                data, timestamp = self.cache[key]
-                if now - timestamp < self.ttl:
-                    return data
-            result = func(*args, **kwargs)
-            self.cache[key] = (result, now)
-            return result
+            last_ex = None
+            for i in range(retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_ex = e
+                    time.sleep(delay * (2 ** i))
+            raise last_ex
         return wrapper
+    return decorator
 
-@CryptoCache(ttl_seconds=60)
-def fetch_market_price(symbol: str) -> float:
-    # Simulate high latency network request
-    time.sleep(0.5)
-    prices = {'BTC': 65000.0, 'ETH': 3500.0, 'SOL': 140.0}
-    return prices.get(symbol, 0.0)
+def format_crypto(value, precision=8):
+    """Format high-precision decimals to string artifacts."""
+    raw = Decimal(str(value))
+    return f"{raw:.{precision}f}".rstrip('0').rstrip('.')
 
-def batch_process_prices(symbols: list):
-    # Using list comprehension for speed optimization
-    return {s: fetch_market_price(s) for s in symbols}
+class PriceSnapshot:
+    def __init__(self, ticker, price):
+        self.ticker = ticker.upper()
+        self.price = Decimal(str(price))
+        self.ts = time.time()
 
-if __name__ == '__main__':
-    # First call takes 0.5s, second call is instant
-    start = time.perf_counter()
-    print(batch_process_prices(['BTC', 'ETH']))
-    print(f"Execution time: {time.perf_counter() - start:.4f}s")
+    def __repr__(self):
+        return f"<{self.ticker}: {self.price} at {int(self.ts)}>"
+
+def batch_process(data, func, chunk_size=10):
+    """Process stream in chunks for memory safety."""
+    for i in range(0, len(data), chunk_size):
+        yield [func(item) for item in data[i:i + chunk_size]]
+
+@retry_on_failure(retries=2)
+def fetch_dummy_ticker(symbol):
+    # Simulate volatile API noise
+    if time.time() % 2 > 1.5:
+        raise ConnectionError("Market noise too loud")
+    return PriceSnapshot(symbol, "42069.1337")
