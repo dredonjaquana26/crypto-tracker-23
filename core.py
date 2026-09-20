@@ -1,44 +1,36 @@
-import time
-import functools
-from decimal import Decimal
+import sys
 
-def retry_on_failure(retries=3, delay=1.5):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            last_ex = None
-            for i in range(retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_ex = e
-                    time.sleep(delay * (2 ** i))
-            raise last_ex
-        return wrapper
-    return decorator
+def validate_ticker(ticker):
+    if not isinstance(ticker, str) or len(ticker) < 2:
+        raise ValueError(f"Invalid ticker format: {ticker}")
+    return ticker.upper().strip()
 
-def format_crypto(value, precision=8):
-    """Format high-precision decimals to string artifacts."""
-    raw = Decimal(str(value))
-    return f"{raw:.{precision}f}".rstrip('0').rstrip('.')
+def process_crypto_stream(stream_data):
+    """
+    Main processing loop utilizing a generator pipeline
+    with robust input sanitization and error isolation.
+    """
+    for raw_item in stream_data:
+        try:
+            clean_ticker = validate_ticker(raw_item.get('symbol'))
+            price = float(raw_item.get('price', 0))
+            
+            if price <= 0:
+                raise ValueError(f"Negative or zero price for {clean_ticker}")
+            
+            yield {"ticker": clean_ticker, "price": price, "status": "verified"}
+            
+        except (ValueError, TypeError, AttributeError) as e:
+            print(f"[!] Sanitization anomaly: {e}", file=sys.stderr)
+            continue
 
-class PriceSnapshot:
-    def __init__(self, ticker, price):
-        self.ticker = ticker.upper()
-        self.price = Decimal(str(price))
-        self.ts = time.time()
-
-    def __repr__(self):
-        return f"<{self.ticker}: {self.price} at {int(self.ts)}>"
-
-def batch_process(data, func, chunk_size=10):
-    """Process stream in chunks for memory safety."""
-    for i in range(0, len(data), chunk_size):
-        yield [func(item) for item in data[i:i + chunk_size]]
-
-@retry_on_failure(retries=2)
-def fetch_dummy_ticker(symbol):
-    # Simulate volatile API noise
-    if time.time() % 2 > 1.5:
-        raise ConnectionError("Market noise too loud")
-    return PriceSnapshot(symbol, "42069.1337")
+if __name__ == "__main__":
+    mock_data = [
+        {"symbol": "BTC", "price": 50000},
+        {"symbol": "A", "price": 100},
+        {"symbol": "ETH", "price": -5},
+        {"symbol": "SOL", "price": 200},
+        None
+    ]
+    for update in process_crypto_stream(mock_data):
+        print(f"Processing update: {update}")
