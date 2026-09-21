@@ -1,45 +1,47 @@
+from typing import Dict, List, Union, Optional
 import time
-import functools
-from typing import Callable, Any
 
-class CryptoCircuitBreaker(Exception):
-    """Custom explosion for unstable market connectivity."""
-    pass
+CryptoData = Dict[str, Union[str, float]]
 
-def safety_net(max_retries: int = 3, delay: float = 0.5):
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            attempts = 0
-            while attempts < max_retries:
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    attempts += 1
-                    if attempts >= max_retries:
-                        raise CryptoCircuitBreaker(f"Market death after {attempts} retries: {e}")
-                    time.sleep(delay * (2 ** attempts))
-                except Exception as e:
-                    # Unrecoverable chaos
-                    return None
-        return wrapper
-    return decorator
+def sanitize_ticker(symbol: str) -> str:
+    """
+    Strips whitespace and forces uppercase for crypto ticker symbols.
+    
+    :param symbol: Raw string input from user or API
+    :return: Sanitized uppercase string
+    """
+    return str(symbol).strip().upper()
 
-def sanitize_price(val: Any) -> float:
-    """Extract numeric value from potentially corrupted feed."""
-    try:
-        clean = str(val).replace('$', '').replace(',', '').strip()
-        result = float(clean)
-        return result if result >= 0 else 0.0
-    except (ValueError, TypeError):
+def calculate_delta(current: float, previous: float) -> float:
+    """
+    Calculates percentage change between two price points.
+    
+    :param current: Current market price
+    :param previous: Historical price reference
+    :return: Float percentage delta
+    """
+    if previous == 0:
         return 0.0
+    return ((current - previous) / previous) * 100
 
-def silent_executor(func: Callable):
-    """Run risky logic without killing the main loop."""
-    @functools.wraps(func)
-    def trap(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception:
-            return None
-    return trap
+def batch_process_prices(data: List[CryptoData]) -> Dict[str, float]:
+    """
+    Aggregates crypto ticker prices into a single mapping.
+    
+    :param data: List of dictionaries containing ticker and price keys
+    :return: Dictionary of symbol keys mapped to float values
+    """
+    result: Dict[str, float] = {}
+    for entry in data:
+        symbol = sanitize_ticker(str(entry.get('symbol', 'UNKNOWN')))
+        price = float(entry.get('price', 0.0))
+        result[symbol] = price
+    return result
+
+def get_timestamp() -> int:
+    """
+    Generates current epoch time as integer for tracking precision.
+    
+    :return: Integer unix timestamp
+    """
+    return int(time.time())
