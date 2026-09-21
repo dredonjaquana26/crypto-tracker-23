@@ -1,76 +1,27 @@
-"""Custom exception hierarchy and diagnostic registry for crypto tracker."""
-
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
-
+from typing import Optional, Any
 
 class CryptoTrackerError(Exception):
-    """Base exception for all crypto-tracker domain errors."""
-
-    code = "E1000"
-
-    def __init__(
-        self,
-        message: str,
-        symbol: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
-    ):
+    """Base exception for the crypto-tracker-23 ecosystem."""
+    def __init__(self, message: str, payload: Optional[Any] = None) -> None:
         super().__init__(message)
-        self.message = message
-        self.symbol = symbol.upper() if symbol else "N/A"
-        self.context = context or {}
-        self.timestamp = datetime.now(timezone.utc).isoformat()
+        self.payload = payload
 
-    def snapshot(self) -> Dict[str, Any]:
-        """Generate structured diagnostic payload for telemetry."""
-        return {
-            "error_type": self.__class__.__name__,
-            "code": self.code,
-            "message": self.message,
-            "symbol": self.symbol,
-            "context": self.context,
-            "timestamp": self.timestamp,
-        }
+class RateLimitExceeded(CryptoTrackerError):
+    """Raised when the crypto exchange API restricts access."""
+    def __init__(self, retry_after: int) -> None:
+        super().__init__(f"Cooldown active for {retry_after} seconds", retry_after)
 
-    def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} [{self.code}] symbol={self.symbol} msg={self.message!r}>"
+class ConnectionTimeout(CryptoTrackerError):
+    """Raised when the socket ghosting strikes."""
+    def __init__(self, endpoint: str) -> None:
+        super().__init__(f"Endpoint {endpoint} went dark", endpoint)
 
+class ValidationError(CryptoTrackerError):
+    """Raised when input data defies logic."""
+    def __init__(self, field: str, reason: str) -> None:
+        super().__init__(f"Invalid field {field}: {reason}", {"field": field, "reason": reason})
 
-class RateLimitExceededError(CryptoTrackerError):
-    """Raised when upstream crypto exchange rate limit is hit."""
-
-    code = "E2001"
-
-    def __init__(
-        self,
-        provider: str,
-        retry_after: float,
-        symbol: Optional[str] = None,
-    ):
-        msg = f"Rate limit reached for provider '{provider}'. Retry in {retry_after}s"
-        super().__init__(msg, symbol=symbol, context={"provider": provider, "retry_after": retry_after})
-        self.retry_after = retry_after
-
-
-class InvalidTickerError(CryptoTrackerError):
-    """Raised when a crypto pair or asset ticker is unrecognized."""
-
-    code = "E3001"
-
-
-class TelemetryParseError(CryptoTrackerError):
-    """Raised when WebSocket payload framing or JSON parsing fails."""
-
-    code = "E4004"
-
-
-def raise_for_status_code(status_code: int, provider: str, symbol: Optional[str] = None) -> None:
-    """Helper dispatcher mapping HTTP status codes to domain exceptions."""
-    if status_code == 429:
-        raise RateLimitExceededError(provider=provider, retry_after=60.0, symbol=symbol)
-    if status_code == 404:
-        raise InvalidTickerError(f"Ticker for symbol '{symbol}' not found on provider '{provider}'", symbol=symbol)
-    if status_code >= 400:
-        raise CryptoTrackerError(
-            f"HTTP error {status_code} from provider '{provider}'", symbol=symbol, context={"status": status_code}
-        )
+class DataInconsistency(CryptoTrackerError):
+    """Raised when price feeds diverge wildly."""
+    def __init__(self, exchange: str, delta: float) -> None:
+        super().__init__(f"Price divergence at {exchange} of {delta}%", delta)
