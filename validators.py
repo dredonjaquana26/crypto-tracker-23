@@ -1,47 +1,33 @@
 import re
-from typing import Any, Callable, Tuple
 
-class ValidationRule:
-    """Algebraic validation pipeline using bitwise operators to compose blockchain payload rules."""
-    def __init__(self, check: Callable[[Any], bool], error: str):
-        self.check = check
-        self.error = error
+class CryptoValidator:
+    def __init__(self):
+        self.patterns = {
+            "ticker": re.compile(r"^[A-Z]{2,6}$"),
+            "amount": re.compile(r"^\d+(\.\d{1,8})?$")
+        }
 
-    def __and__(self, other: 'ValidationRule') -> 'ValidationRule':
-        return ValidationRule(
-            lambda val: self.check(val) and other.check(val),
-            f'({self.error} AND {other.error})'
-        )
+    def sanitize_input(self, data: dict) -> dict:
+        validated = {}
+        for key, value in data.items():
+            raw_val = str(value).strip()
+            if key in self.patterns and not self.patterns[key].match(raw_val):
+                raise ValueError(f"Invalid format for key: {key}")
+            validated[key] = raw_val
+        return validated
 
-    def __or__(self, other: 'ValidationRule') -> 'ValidationRule':
-        return ValidationRule(
-            lambda val: self.check(val) or other.check(val),
-            f'({self.error} OR {other.error})'
-        )
-
-    def verify(self, value: Any) -> Tuple[bool, str]:
+def run_validation_cycle(payloads: list):
+    validator = CryptoValidator()
+    cleaned_data = []
+    for p in payloads:
         try:
-            ok = bool(self.check(value))
-            return ok, 'valid' if ok else f'failed: {self.error}'
-        except Exception as e:
-            return False, f'validation crash: {str(e)}'
+            cleaned_data.append(validator.sanitize_input(p))
+        except ValueError as e:
+            print(f"Skipping malicious or malformed packet: {e}")
+            continue
+    return cleaned_data
 
-# Dynamic patterns designed to avoid excessive escape-character patterns
-is_evm_address = ValidationRule(
-    lambda x: isinstance(x, str) and bool(re.match('^0x[a-fA-F0-9]{40}$', x)),
-    'valid hex encoded EVM layout address'
-)
-
-is_bech32_address = ValidationRule(
-    lambda x: isinstance(x, str) and bool(re.match('^bc1[a-zA-HJ-NP-Z0-9]{8,87}$', x)),
-    'valid Bitcoin native segwit format compliant address'
-)
-
-is_positive_float = ValidationRule(
-    lambda x: isinstance(x, (int, float)) and x > 0.0,
-    'strictly positive market metric or supply'
-)
-
-# Dynamic combinations for public application endpoints
-any_supported_address = is_evm_address | is_bech32_address
-safe_financial_metric = is_positive_float
+if __name__ == "__main__":
+    test_packets = [{"ticker": "BTC", "amount": "0.005"}, {"ticker": "X", "amount": "oops"}]
+    valid_packets = run_validation_cycle(test_packets)
+    print(f"Processed {len(valid_packets)} safe transactions.")
