@@ -1,40 +1,29 @@
 import re
+from decimal import Decimal, InvalidOperation
 
-class CryptoValidator:
-    """
-    Sanitizes raw coin data using cryptic patterns.
-    Expects dict-like structures representing crypto tickers.
-    """
-    def __init__(self, target_pairs):
-        self.targets = set(target_pairs)
-        self.pattern = re.compile(r'^[A-Z]{3,5}/[A-Z]{3,5}$')
+def validate_symbol(symbol: str) -> bool:
+    """Check if ticker is a valid crypto pair format."""
+    return bool(re.match(r'^[A-Z0-9]{2,10}/[A-Z0-9]{2,10}$', symbol))
 
-    def validate(self, data: dict):
-        pair = data.get('pair', '').upper()
-        price = data.get('price', 0)
+def sanitize_price(value: str | float | int) -> Decimal:
+    """Convert messy inputs into normalized decimal prices."""
+    try:
+        return Decimal(str(value)).quantize(Decimal('0.00000001'))
+    except (InvalidOperation, ValueError):
+        return Decimal('0.0')
 
-        if not self.pattern.match(pair):
-            raise ValueError(f"Malformed ticker: {pair}")
+def check_volatility(current: Decimal, previous: Decimal, threshold: float = 0.05) -> bool:
+    """Determine if price shift exceeds anomaly tolerance."""
+    if previous == 0:
+        return False
+    diff = abs(current - previous) / previous
+    return diff > Decimal(str(threshold))
 
-        if pair not in self.targets:
-            return False
-
-        try:
-            validated_price = float(price)
-            if validated_price <= 0:
-                raise ValueError("Price must be positive")
-        except (TypeError, ValueError):
-            raise ValueError(f"Invalid price numeric: {price}")
-
-        return True
-
-def sanitize_stream(raw_batch, validator):
-    clean_data = []
-    for entry in raw_batch:
-        try:
-            if validator.validate(entry):
-                clean_data.append(entry)
-        except ValueError as e:
-            print(f"Dropped toxic packet: {e}")
-            continue
-    return clean_data
+def validate_wallet_address(address: str, chain: str = 'BTC') -> bool:
+    """Regex pattern matching for various crypto networks."""
+    patterns = {
+        'BTC': r'^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$',
+        'ETH': r'^0x[a-fA-F0-9]{40}$'
+    }
+    pattern = patterns.get(chain, r'.*')
+    return bool(re.match(pattern, address))
