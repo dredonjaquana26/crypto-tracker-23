@@ -1,36 +1,41 @@
-import time
 import functools
-from typing import Callable, Any
+import time
 
-def throttle(seconds: int) -> Callable:
-    def decorator(func: Callable) -> Callable:
-        last_called = 0
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            nonlocal last_called
-            elapsed = time.time() - last_called
-            if elapsed < seconds:
-                time.sleep(seconds - elapsed)
-            last_called = time.time()
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
+CACHE_TTL = 60
+_memo_store = {}
 
-def sanitize_ticker(symbol: str) -> str:
-    return symbol.strip().upper().replace('/', '_')
+def memoize_with_expiry(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        key = (func.__name__, args, frozenset(kwargs.items()))
+        now = time.monotonic()
+        if key in _memo_store:
+            val, timestamp = _memo_store[key]
+            if now - timestamp < CACHE_TTL:
+                return val
+        result = func(*args, **kwargs)
+        _memo_store[key] = (result, now)
+        return result
+    return wrapper
 
-class DataReshaper:
-    def __init__(self, data: dict):
-        self.data = data
+class DataStreamOptimizer:
+    @staticmethod
+    def batch_process(data_stream, chunk_size=100):
+        it = iter(data_stream)
+        while True:
+            chunk = []
+            try:
+                for _ in range(chunk_size):
+                    chunk.append(next(it))
+                yield chunk
+            except StopIteration:
+                if chunk:
+                    yield chunk
+                break
 
-    def extract_price(self, key: str = 'price') -> float:
-        try:
-            return float(self.data.get(key, 0.0))
-        except (ValueError, TypeError):
-            return 0.0
+    @staticmethod
+    def fast_float_map(iterable):
+        return map(float, iterable)
 
-    def to_tuple(self) -> tuple:
-        return tuple(self.data.values())
-
-def format_crypto_log(symbol: str, price: float) -> str:
-    return f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {symbol.ljust(8)} : ${price:>12.4f}"
+def sanitize_tick_data(data):
+    return [d for d in data if d.get('price', 0) > 0]
