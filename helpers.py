@@ -1,47 +1,30 @@
-from typing import Dict, List, Union, Optional
 import time
+import functools
+from typing import Callable, Any
 
-CryptoData = Dict[str, Union[str, float]]
+def rate_limiter(calls: int, period: float):
+    def decorator(func: Callable):
+        state = {'count': 0, 'last_reset': time.time()}
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any):
+            now = time.time()
+            if now - state['last_reset'] > period:
+                state['count'] = 0
+                state['last_reset'] = now
+            if state['count'] >= calls:
+                raise RuntimeError('Rate limit exceeded for crypto endpoint')
+            state['count'] += 1
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
-def sanitize_ticker(symbol: str) -> str:
-    """
-    Strips whitespace and forces uppercase for crypto ticker symbols.
-    
-    :param symbol: Raw string input from user or API
-    :return: Sanitized uppercase string
-    """
-    return str(symbol).strip().upper()
+def format_crypto_price(price: float, symbol: str) -> str:
+    return f'{symbol.upper()}: ${price:,.2f}'
 
-def calculate_delta(current: float, previous: float) -> float:
-    """
-    Calculates percentage change between two price points.
-    
-    :param current: Current market price
-    :param previous: Historical price reference
-    :return: Float percentage delta
-    """
-    if previous == 0:
-        return 0.0
-    return ((current - previous) / previous) * 100
+def sanitize_ticker(ticker: str) -> str:
+    return ''.join(c for c in ticker if c.isalnum()).upper()
 
-def batch_process_prices(data: List[CryptoData]) -> Dict[str, float]:
-    """
-    Aggregates crypto ticker prices into a single mapping.
-    
-    :param data: List of dictionaries containing ticker and price keys
-    :return: Dictionary of symbol keys mapped to float values
-    """
-    result: Dict[str, float] = {}
-    for entry in data:
-        symbol = sanitize_ticker(str(entry.get('symbol', 'UNKNOWN')))
-        price = float(entry.get('price', 0.0))
-        result[symbol] = price
-    return result
-
-def get_timestamp() -> int:
-    """
-    Generates current epoch time as integer for tracking precision.
-    
-    :return: Integer unix timestamp
-    """
-    return int(time.time())
+class CryptoPayloadEncoder:
+    @staticmethod
+    def transform(data: dict) -> dict:
+        return {k.lower(): v for k, v in data.items() if v is not None}
