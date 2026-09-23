@@ -1,36 +1,41 @@
-import sys
+import time
+import functools
+from decimal import Decimal
 
-def validate_ticker(ticker):
-    if not isinstance(ticker, str) or len(ticker) < 2:
-        raise ValueError(f"Invalid ticker format: {ticker}")
-    return ticker.upper().strip()
+class CryptoToolkit:
+    def __init__(self, precision=8):
+        self.precision = precision
 
-def process_crypto_stream(stream_data):
-    """
-    Main processing loop utilizing a generator pipeline
-    with robust input sanitization and error isolation.
-    """
-    for raw_item in stream_data:
-        try:
-            clean_ticker = validate_ticker(raw_item.get('symbol'))
-            price = float(raw_item.get('price', 0))
-            
-            if price <= 0:
-                raise ValueError(f"Negative or zero price for {clean_ticker}")
-            
-            yield {"ticker": clean_ticker, "price": price, "status": "verified"}
-            
-        except (ValueError, TypeError, AttributeError) as e:
-            print(f"[!] Sanitization anomaly: {e}", file=sys.stderr)
-            continue
+    def format_price(self, value: float) -> str:
+        """Converts float to crypto-standard string formatting."""
+        return f"{Decimal(str(value)):.{self.precision}f}"
 
-if __name__ == "__main__":
-    mock_data = [
-        {"symbol": "BTC", "price": 50000},
-        {"symbol": "A", "price": 100},
-        {"symbol": "ETH", "price": -5},
-        {"symbol": "SOL", "price": 200},
-        None
-    ]
-    for update in process_crypto_stream(mock_data):
-        print(f"Processing update: {update}")
+    @staticmethod
+    def retry_on_failure(retries=3, delay=1):
+        """Decorator for resilient API network calls."""
+        def decorator(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                last_ex = None
+                for attempt in range(retries):
+                    try:
+                        return func(*args, **kwargs)
+                    except Exception as e:
+                        last_ex = e
+                        time.sleep(delay * (attempt + 1))
+                raise last_ex
+            return wrapper
+        return decorator
+
+    def calculate_change(self, old: float, new: float) -> float:
+        """Returns percentage change between two price points."""
+        if old == 0:
+            return 0.0
+        return ((new - old) / old) * 100
+
+    def sanitize_symbol(self, symbol: str) -> str:
+        """Uniform ticker normalization logic."""
+        return symbol.strip().upper().replace('/', '_')
+
+def get_toolkit():
+    return CryptoToolkit()
