@@ -1,28 +1,30 @@
 import logging
+from logging.handlers import RotatingFileHandler
 import os
-from datetime import datetime
 
-class CryptoFormatter(logging.Formatter):
-    def format(self, record):
-        record.timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        record.crypto_icon = '₿' if record.levelno == logging.INFO else '⚠'
-        return f"[{record.timestamp}] {record.crypto_icon} {record.levelname}: {record.getMessage()}"
+def get_crypto_logger(name: str = 'crypto-tracker-23') -> logging.Logger:
+    log_path = os.path.join(os.getcwd(), 'logs', 'tracker.log')
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
 
-def get_crypto_logger(name: str) -> logging.Logger:
+    formatter = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | [%(name)s] -> %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    handler = RotatingFileHandler(
+        log_path, 
+        maxBytes=5 * 1024 * 1024, 
+        backupCount=3
+    )
+    handler.setFormatter(formatter)
+
     logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    
     if not logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(CryptoFormatter())
         logger.addHandler(handler)
-        logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
+        console = logging.StreamHandler()
+        console.setFormatter(formatter)
+        logger.addHandler(console)
+
     return logger
-
-log = get_crypto_logger('crypto-tracker-23')
-
-def track_event(message: str, payload: dict = None):
-    formatted_data = " | ".join([f"{k}={v}" for k, v in (payload or {}).items()])
-    log.info(f"{message} -> {formatted_data}")
-
-def alert_volatile(price_change: float):
-    if abs(price_change) > 5.0:
-        log.warning(f"High volatility detected: {price_change}%")
