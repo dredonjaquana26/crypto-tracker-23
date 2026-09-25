@@ -1,41 +1,27 @@
-import functools
 import time
+import functools
+import random
 
-CACHE_TTL = 60
-_memo_store = {}
+def retry_operation(max_attempts=3, backoff=2):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            attempts = 0
+            while attempts < max_attempts:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    attempts += 1
+                    if attempts >= max_attempts:
+                        raise e
+                    sleep_time = (backoff ** attempts) + random.uniform(0, 1)
+                    time.sleep(sleep_time)
+        return wrapper
+    return decorator
 
-def memoize_with_expiry(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        key = (func.__name__, args, frozenset(kwargs.items()))
-        now = time.monotonic()
-        if key in _memo_store:
-            val, timestamp = _memo_store[key]
-            if now - timestamp < CACHE_TTL:
-                return val
-        result = func(*args, **kwargs)
-        _memo_store[key] = (result, now)
-        return result
-    return wrapper
-
-class DataStreamOptimizer:
-    @staticmethod
-    def batch_process(data_stream, chunk_size=100):
-        it = iter(data_stream)
-        while True:
-            chunk = []
-            try:
-                for _ in range(chunk_size):
-                    chunk.append(next(it))
-                yield chunk
-            except StopIteration:
-                if chunk:
-                    yield chunk
-                break
-
-    @staticmethod
-    def fast_float_map(iterable):
-        return map(float, iterable)
-
-def sanitize_tick_data(data):
-    return [d for d in data if d.get('price', 0) > 0]
+@retry_operation(max_attempts=5, backoff=1.5)
+def fetch_crypto_price(ticker):
+    # Simulate network instability in crypto API calls
+    if random.random() < 0.7:
+        raise ConnectionError(f"Failed to reach market node for {ticker}")
+    return {"ticker": ticker, "price": round(random.uniform(1000, 60000), 2)}
