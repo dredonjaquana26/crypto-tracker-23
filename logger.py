@@ -1,54 +1,35 @@
-import os
 import logging
-from logging.handlers import RotatingFileHandler
+import os
+from datetime import datetime
 
-class CryptoSentimentFormatter(logging.Formatter):
-    """Custom formatter highlighting market sentiment from logs."""
+class CryptoFormatter(logging.Formatter):
+    COLORS = {
+        'DEBUG': '\033[94m',
+        'INFO': '\033[92m',
+        'WARNING': '\033[93m',
+        'ERROR': '\033[91m',
+        'CRITICAL': '\033[95m'
+    }
+
     def format(self, record):
-        original_msg = record.msg
-        if isinstance(record.msg, str):
-            msg_lower = record.msg.lower()
-            if "pump" in msg_lower or "high" in msg_lower or "bull" in msg_lower:
-                record.msg = f"📈 {original_msg} [BULLISH]"
-            elif "dump" in msg_lower or "low" in msg_lower or "bear" in msg_lower:
-                record.msg = f"📉 {original_msg} [BEARISH]"
-            elif record.levelno >= logging.WARNING:
-                record.msg = f"🚨 {original_msg}"
-            else:
-                record.msg = f"⚡ {original_msg}"
-        formatted = super().format(record)
-        record.msg = original_msg
-        return formatted
+        color = self.COLORS.get(record.levelname, '')
+        reset = '\033[0m'
+        log_msg = super().format(record)
+        return f"{color}[{datetime.now().strftime('%H:%M:%S')}] {record.levelname}: {log_msg}{reset}"
 
-def setup_crypto_logger(
-    name: str = "crypto_tracker",
-    log_file: str = "crypto_tracker.log",
-    max_bytes: int = 5242880,
-    backup_count: int = 3
-) -> logging.Logger:
+def setup_logger(name: str) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
-    if logger.hasHandlers():
-        logger.handlers.clear()
+    
     console_handler = logging.StreamHandler()
-    console_formatter = CryptoSentimentFormatter(
-        fmt="%(asctime)s | %(levelname)-8s | %(message)s",
-        datefmt="%H:%M:%S"
-    )
-    console_handler.setFormatter(console_formatter)
-    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(CryptoFormatter('%(message)s'))
     logger.addHandler(console_handler)
-    file_handler = RotatingFileHandler(
-        log_file,
-        maxBytes=max_bytes,
-        backupCount=backup_count,
-        encoding="utf-8"
-    )
-    file_formatter = CryptoSentimentFormatter(
-        fmt="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
-    file_handler.setFormatter(file_formatter)
-    file_handler.setLevel(logging.DEBUG)
+
+    if not os.path.exists('logs'):
+        os.makedirs('logs')
+        
+    file_handler = logging.FileHandler(f'logs/crypto_{datetime.now().strftime("%Y%m%d")}.log')
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(file_handler)
+    
     return logger
