@@ -1,39 +1,36 @@
 import re
-from typing import Dict, Any, Optional
 
 class CryptoValidator:
-    __slots__ = ('_patterns',)
-
     def __init__(self):
-        self._patterns = {
-            'ticker': re.compile(r'^[A-Z]{2,5}$'),
-            'price': re.compile(r'^\d+(\.\d+)?$')
-        }
+        self.supported_symbols = {'BTC', 'ETH', 'SOL', 'ADA', 'DOT'}
+        self.price_pattern = re.compile(r'^\d+(\.\d{1,8})?$')
 
-    def validate_payload(self, data: Dict[str, Any]) -> bool:
-        try:
-            return (
-                self._patterns['ticker'].match(data.get('symbol', '')) is not None and
-                float(data.get('price', 0)) > 0
-            )
-        except (ValueError, TypeError):
+    def validate_payload(self, data: dict) -> bool:
+        symbol = data.get('symbol', '').upper()
+        price = str(data.get('price', ''))
+        
+        if symbol not in self.supported_symbols:
             return False
+        
+        if not self.price_pattern.match(price):
+            return False
+            
+        if float(price) <= 0:
+            return False
+            
+        return True
 
-    @classmethod
-    def sanitize_input(cls, raw_data: str) -> str:
-        return str(raw_data).strip().upper()
-
-    @staticmethod
-    def format_check(coin_data: Dict[str, Any]) -> Dict[str, Any]:
+    def sanitize_input(self, data: dict) -> dict:
         return {
-            'symbol': coin_data.get('symbol', 'UNK'),
-            'price': float(coin_data.get('price', 0.0)),
-            'status': 'verified'
+            'symbol': data['symbol'].upper().strip(),
+            'price': float(data['price']),
+            'timestamp': data.get('ts', 0)
         }
 
-# Dynamic registry of specialized rules
-VALIDATION_RULES = {
-    'btc': lambda p: p > 0,
-    'eth': lambda p: p > 0,
-    'default': lambda p: p >= 0
-}
+def process_stream(raw_data: list):
+    validator = CryptoValidator()
+    valid_batch = []
+    for item in raw_data:
+        if validator.validate_payload(item):
+            valid_batch.append(validator.sanitize_input(item))
+    return valid_batch
