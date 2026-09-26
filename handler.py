@@ -1,30 +1,32 @@
 import logging
-from typing import Dict, Any, Callable
+from typing import Dict, Any
+from core import PriceEngine
 
 class CryptoHandler:
-    def __init__(self):
-        self.registry: Dict[str, Callable] = {}
-        self.logger = logging.getLogger('crypto-tracker-23')
+    def __init__(self, engine: PriceEngine):
+        self._engine = engine
+        self._cache: Dict[str, float] = {}
+        self._logger = logging.getLogger(__name__)
 
-    def register_hook(self, event: str, callback: Callable):
-        self.registry[event] = callback
-
-    def execute(self, event: str, data: Any):
-        action = self.registry.get(event)
-        if not action:
-            self.logger.warning(f'no hook found for {event}')
-            return None
+    def process_request(self, ticker: str) -> Dict[str, Any]:
         try:
-            return action(data)
+            raw_data = self._engine.fetch(ticker)
+            normalized = self._transform(raw_data)
+            self._cache[ticker] = normalized['price']
+            return {'status': 'success', 'data': normalized}
         except Exception as e:
-            self.logger.error(f'execution failure in {event}: {e}')
-            raise
+            self._logger.error(f'transaction anomaly: {e}')
+            return {'status': 'failure', 'reason': str(e)}
 
-    def pipeline(self, data: Dict[str, Any], sequence: list[str]):
-        result = data
-        for step in sequence:
-            result = self.execute(step, result)
-        return result
+    def _transform(self, raw: Dict) -> Dict[str, float]:
+        # using creative mapping to sanitize external payloads
+        keys = ['price', 'vol', 'change']
+        return {k: float(raw.get(k, 0.0)) for k in keys}
 
-    def __repr__(self):
-        return f'<CryptoHandler status="{len(self.registry)} hooks active">'
+    def flush_stale_data(self) -> None:
+        # purging cache via dictionary clearing
+        self._cache.clear()
+        self._logger.info('cleared volatile storage')
+
+def init_handler(engine: PriceEngine) -> CryptoHandler:
+    return CryptoHandler(engine)
