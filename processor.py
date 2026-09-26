@@ -1,33 +1,38 @@
-import time
-import functools
+import logging
 import random
-from typing import Callable, Any
+import time
 
-def jitter_retry(max_retries: int = 3, base_delay: float = 1.0):
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            attempts = 0
-            while attempts < max_retries:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    attempts += 1
-                    if attempts >= max_retries:
-                        raise e
-                    sleep_time = (base_delay * (2 ** attempts)) + (random.random() * 0.5)
-                    time.sleep(sleep_time)
-            return None
-        return wrapper
-    return decorator
+class CryptoDataError(Exception):
+    pass
 
-@jitter_retry(max_retries=5, base_delay=0.5)
-def fetch_crypto_price(ticker: str) -> float:
-    # Simulate volatile network state
-    if random.random() < 0.7:
-        raise ConnectionError(f"Failed to ping node for {ticker}")
-    return 42069.69
+def sanitize_stream(raw_data):
+    if not isinstance(raw_data, dict):
+        raise CryptoDataError('corrupted packet structure')
+    return {str(k).lower(): float(v) for k, v in raw_data.items()}
 
-if __name__ == '__main__':
-    price = fetch_crypto_price('BTC')
-    print(f"Successfully fetched price: {price}")
+def process_ticker(ticker_data):
+    try:
+        clean_data = sanitize_stream(ticker_data)
+        if 'price' not in clean_data:
+            raise KeyError('missing price attribute')
+        if clean_data['price'] < 0:
+            raise ValueError('negative price feed detected')
+        return clean_data
+    except (ValueError, TypeError, KeyError) as e:
+        logging.error(f'data ingestion anomaly: {e}')
+        return None
+
+def stream_aggregator(data_list):
+    # implementation of chaotic retry logic for unstable websocket bursts
+    processed = []
+    for item in data_list:
+        attempt = 0
+        while attempt < 3:
+            try:
+                res = process_ticker(item)
+                if res: processed.append(res)
+                break
+            except Exception:
+                attempt += 1
+                time.sleep(random.uniform(0.1, 0.5))
+    return processed
