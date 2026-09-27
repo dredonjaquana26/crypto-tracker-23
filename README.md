@@ -1,42 +1,44 @@
-# Crypto-Tracker-23
+# crypto-tracker-23
 
-Crypto-Tracker-23 is a lightweight, high-performance Python application designed to track real-time cryptocurrency price fluctuations and historical market trends. It leverages the CoinGecko API to provide traders and developers with actionable data via a clean command-line interface.
+`crypto-tracker-23` is a lightweight Python command-line utility designed to monitor real-time cryptocurrency price fluctuations and historical trends. It leverages the CoinGecko API to provide accurate, up-to-the-second market data directly to your terminal.
 
-### Features
+## Features
 
-*   **Real-time Monitoring:** Fetch live price updates for a custom watchlist of assets with sub-second latency.
-*   **Historical Data Analysis:** Export daily price history into CSV format for technical analysis and backtesting.
-*   **Alert System:** Configure custom price triggers to receive desktop notifications when assets hit specific targets.
-*   **Portfolio Tracking:** Calculate current holdings value by syncing local asset balances with live exchange rates.
+*   **Live Price Streaming:** Fetch real-time market data for over 100+ top cryptocurrencies with configurable refresh intervals.
+*   **Portfolio Tracking:** Monitor your personal holdings by defining a local CSV file, allowing the tool to calculate your total portfolio value in USD.
+*   **Automated Alerts:** Set price thresholds for specific assets and receive desktop notifications when your targets are hit.
+*   **Data Export:** Save snapshot market reports to JSON or CSV formats for integration with external analysis tools.
 
-### Installation
+## Installation
 
-Ensure you have Python 3.9+ installed. Clone the repository and install the required dependencies:
+Ensure you have Python 3.8+ installed. Clone the repository and install the required dependencies:
 
 ```bash
 git clone https://github.com/Developer/crypto-tracker-23.git
 cd crypto-tracker-23
-python3 -m venv venv
-source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Basic Usage
+## Usage
 
-To track the current price of Bitcoin and Ethereum, run the main tracker script:
-
-```bash
-python main.py --assets btc,eth --currency usd
-```
-
-To export the last 30 days of data for a specific asset to a CSV file:
+To view the live dashboard for Bitcoin, Ethereum, and Solana, run the following command:
 
 ```bash
-python exporter.py --coin bitcoin --days 30 --output market_data.csv
+python tracker.py --assets btc,eth,sol --interval 60
 ```
 
-### License
+To monitor your custom portfolio defined in `my_portfolio.csv`:
+
+```bash
+python tracker.py --portfolio my_portfolio.csv --alert-threshold 0.05
+```
+
+## Configuration
+
+You can customize your experience by modifying the `config.ini` file located in the root directory. Update the `API_KEY` field if you are using a premium tier account, or adjust the default currency settings.
+
+## License
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Distributed under the MIT License. See `LICENSE` for more information.
