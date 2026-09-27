@@ -1,55 +1,65 @@
-from typing import Dict, Generic, Iterator, NewType, Protocol, Tuple, TypeVar
+from typing import Generator, NamedTuple, Optional, Sequence
+from datetime import datetime
 
-# Precise domain-specific type boundaries avoiding float inaccuracies
-Satoshi = NewType("Satoshi", int)
-UsdCent = NewType("UsdCent", int)
+class PricePoint(NamedTuple):
+    """Represents a singular temporal price observation of a crypto token."""
+    timestamp: datetime
+    price: float
 
-T = TypeVar("T", Satoshi, UsdCent)
+class FluctuationReport(NamedTuple):
+    """Summary analysis of the crypto token's rolling price trend."""
+    token: str
+    amplitude: float
+    is_volatile: bool
+    velocity: float
 
-
-class PriceFeed(Protocol[T]):
-    """Protocol defining the structural contract for high-frequency pricing inputs."""
-
-    def tick(self) -> Iterator[Tuple[str, T]]:
-        """Yields a sequence of crypto asset tickers and their raw integer values."""
-        ...
-
-
-class VolatilityEngine(Generic[T]):
-    """Evaluates structural risk and tracking divergence without IEEE-754 drift.
-
-    Leverages Generic bounds to enforce compile-time verification of
-    Satoshi versus UsdCent pricing metrics within the tracking matrix.
+def VolatilityCoil(token: str, threshold: float) -> Generator[Optional[FluctuationReport], PricePoint, None]:
     """
+    A stateful, coroutine-based generator evaluating rolling price dynamics.
 
-    def __init__(self, baseline: T) -> None:
-        self.baseline: T = baseline
-        self.history: list[T] = [baseline]
+    Acts as a lightweight stream processing node. Yields None on initialization,
+    then consumes PricePoint inputs and evaluates rolling dynamics.
+    """
+    history: list[PricePoint] = []
+    point: Optional[PricePoint] = yield None
 
-    def record_and_evaluate(self, feed: PriceFeed[T]) -> dict[str, float]:
-        """Consumes ticker streams, calculating deviation profiles relative to baseline.
+    while point is not None:
+        history.append(point)
+        if len(history) < 2:
+            point = yield None
+            continue
 
-        Returns a mapped dictionary of evaluated price swing percentages.
-        """
-        evaluations: dict[str, float] = {}
-        for ticker, raw_val in feed.tick():
-            self.history.append(raw_val)
-            variance = int(raw_val) - int(self.baseline)
-            pct_deviation = (variance / int(self.baseline)) * 100.0
-            evaluations[ticker] = round(pct_deviation, 4)
+        if len(history) > 5:
+            history.pop(0)
 
-            if len(self.history) > 50:
-                self.history.pop(0)
-        return evaluations
+        start, end = history[0], history[-1]
+        time_diff = (end.timestamp - start.timestamp).total_seconds()
 
+        if time_diff <= 0:
+            point = yield None
+            continue
 
-class MockSatoshiFeed:
-    """Generates mock cryptographic ticks mapping to Satoshi protocol standards."""
+        amplitude = abs(end.price - start.price) / start.price
+        velocity = (end.price - start.price) / time_diff
+        is_volatile = amplitude >= threshold
 
-    def __init__(self, starting_value: int) -> None:
-        self.current = starting_value
+        report = FluctuationReport(
+            token=token,
+            amplitude=round(amplitude, 6),
+            is_volatile=is_volatile,
+            velocity=round(velocity, 6)
+        )
+        point = yield report
 
-    def tick(self) -> Iterator[Tuple[str, Satoshi]]:
-        """Produces simulated BTC tick with upward drift volatility."""
-        self.current = int(self.current * 1.025)
-        yield ("BTC/USD", Satoshi(self.current))
+def run_pipeline(prices: Sequence[float], token: str = "BTC") -> list[FluctuationReport]:
+    """Simulates pricing ingest pipeline and yields generated analysis reports."""
+    tracker = VolatilityCoil(token=token, threshold=0.015)
+    next(tracker)
+    reports: list[FluctuationReport] = []
+
+    for i, price in enumerate(prices):
+        timestamp = datetime.fromtimestamp(1680000000 + i)
+        report = tracker.send(PricePoint(timestamp, price))
+        if report:
+            reports.append(report)
+    return reports
