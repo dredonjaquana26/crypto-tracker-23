@@ -1,38 +1,36 @@
-import logging
-import random
-import time
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+import json
 
-class CryptoDataError(Exception):
-    pass
+@dataclass
+class CryptoPacket:
+    symbol: str
+    price: float
+    volume: float
 
-def sanitize_stream(raw_data):
-    if not isinstance(raw_data, dict):
-        raise CryptoDataError('corrupted packet structure')
-    return {str(k).lower(): float(v) for k, v in raw_data.items()}
+class DataProcessor:
+    def __init__(self, precision: int = 8):
+        self.precision = precision
 
-def process_ticker(ticker_data):
-    try:
-        clean_data = sanitize_stream(ticker_data)
-        if 'price' not in clean_data:
-            raise KeyError('missing price attribute')
-        if clean_data['price'] < 0:
-            raise ValueError('negative price feed detected')
-        return clean_data
-    except (ValueError, TypeError, KeyError) as e:
-        logging.error(f'data ingestion anomaly: {e}')
-        return None
-
-def stream_aggregator(data_list):
-    # implementation of chaotic retry logic for unstable websocket bursts
-    processed = []
-    for item in data_list:
-        attempt = 0
-        while attempt < 3:
+    def sanitize_stream(self, raw_data: List[Dict]) -> List[CryptoPacket]:
+        processed = []
+        for entry in raw_data:
             try:
-                res = process_ticker(item)
-                if res: processed.append(res)
-                break
-            except Exception:
-                attempt += 1
-                time.sleep(random.uniform(0.1, 0.5))
-    return processed
+                clean = CryptoPacket(
+                    symbol=str(entry.get('s', 'UNKNOWN')).upper(),
+                    price=round(float(entry.get('p', 0)), self.precision),
+                    volume=round(float(entry.get('q', 0)), self.precision)
+                )
+                processed.append(clean)
+            except (ValueError, TypeError):
+                continue
+        return processed
+
+    def transform_to_csv(self, packets: List[CryptoPacket]) -> str:
+        headers = 'symbol,price,volume'
+        rows = [f'{p.symbol},{p.price},{p.volume}' for p in packets]
+        return '\n'.join([headers] + rows)
+
+    @staticmethod
+    def pack_binary(data: List[CryptoPacket]) -> bytes:
+        return json.dumps([p.__dict__ for p in data]).encode('zlib')
