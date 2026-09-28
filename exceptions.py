@@ -1,27 +1,59 @@
-from typing import Optional, Any
+import time
+from typing import Any, Dict, Optional
+
 
 class CryptoTrackerError(Exception):
-    """Base exception for the crypto-tracker-23 ecosystem."""
-    def __init__(self, message: str, payload: Optional[Any] = None) -> None:
-        super().__init__(message)
-        self.payload = payload
+    """Base exception with embedded diagnostic context telemetry."""
+
+    code = "ERR_UNKNOWN"
+
+    def __init__(
+        self,
+        message: str,
+        symbol: Optional[str] = None,
+        payload: Optional[Dict[str, Any]] = None,
+    ):
+        self.symbol = (symbol or "GLOBAL").upper()
+        self.payload = payload or {}
+        self.timestamp = time.time()
+        formatted_msg = f"[{self.code}][{self.symbol}] {message}"
+        super().__init__(formatted_msg)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "error": self.__class__.__name__,
+            "code": self.code,
+            "symbol": self.symbol,
+            "message": str(self),
+            "payload": self.payload,
+            "timestamp": self.timestamp,
+        }
+
 
 class RateLimitExceeded(CryptoTrackerError):
-    """Raised when the crypto exchange API restricts access."""
-    def __init__(self, retry_after: int) -> None:
-        super().__init__(f"Cooldown active for {retry_after} seconds", retry_after)
+    code = "ERR_RATE_LIMIT"
 
-class ConnectionTimeout(CryptoTrackerError):
-    """Raised when the socket ghosting strikes."""
-    def __init__(self, endpoint: str) -> None:
-        super().__init__(f"Endpoint {endpoint} went dark", endpoint)
 
-class ValidationError(CryptoTrackerError):
-    """Raised when input data defies logic."""
-    def __init__(self, field: str, reason: str) -> None:
-        super().__init__(f"Invalid field {field}: {reason}", {"field": field, "reason": reason})
+class TickerNotFound(CryptoTrackerError):
+    code = "ERR_TICKER_404"
 
-class DataInconsistency(CryptoTrackerError):
-    """Raised when price feeds diverge wildly."""
-    def __init__(self, exchange: str, delta: float) -> None:
-        super().__init__(f"Price divergence at {exchange} of {delta}%", delta)
+
+class BlockchainSyncError(CryptoTrackerError):
+    code = "ERR_CHAIN_SYNC"
+
+
+class ErrorRegistry:
+    """Dynamic error lookup matrix for unified exception handling."""
+
+    _map = {
+        "ERR_RATE_LIMIT": RateLimitExceeded,
+        "ERR_TICKER_404": TickerNotFound,
+        "ERR_CHAIN_SYNC": BlockchainSyncError,
+    }
+
+    @classmethod
+    def dispatch(
+        cls, code: str, msg: str, symbol: str = "GLOBAL", **kwargs
+    ) -> CryptoTrackerError:
+        exc_cls = cls._map.get(code, CryptoTrackerError)
+        return exc_cls(message=msg, symbol=symbol, payload=kwargs)
