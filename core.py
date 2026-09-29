@@ -1,26 +1,48 @@
-import sys
+from array import array
+from typing import Dict, Optional
 
-def validate_crypto_input(data):
-    required = {'symbol', 'price'}
-    if not all(k in data for k in required):
-        raise ValueError(f'missing keys: {required - data.keys()}')
-    if not isinstance(data['price'], (int, float)) or data['price'] < 0:
-        raise ValueError('price must be positive numeric')
-    return True
+class FastTickerStream:
+    """High-throughput sliding window ticker aggregator using fixed-point integer arrays."""
+    
+    __slots__ = ('_capacity', '_scale', '_buffers', '_pointers', '_counts')
 
-def process_stream(data_stream):
-    for entry in data_stream:
-        try:
-            if validate_crypto_input(entry):
-                print(f'Processing {entry["symbol"]} at ${entry["price"]}')
-        except (ValueError, TypeError) as e:
-            print(f'Ignored malformed payload: {e}', file=sys.stderr)
+    def __init__(self, capacity: int = 1024, decimal_precision: int = 4):
+        self._capacity = capacity
+        self._scale = 10 ** decimal_precision
+        self._buffers: Dict[str, array] = {}
+        self._pointers: Dict[str, int] = {}
+        self._counts: Dict[str, int] = {}
 
-if __name__ == '__main__':
-    mock_data = [
-        {'symbol': 'BTC', 'price': 65000},
-        {'symbol': 'ETH', 'price': 'invalid'},
-        {'symbol': 'SOL', 'price': 150},
-        {'invalid': 'data'}
-    ]
-    process_stream(mock_data)
+    def register_symbol(self, symbol: str) -> None:
+        if symbol not in self._buffers:
+            self._buffers[symbol] = array('q', [0] * self._capacity)
+            self._pointers[symbol] = 0
+            self._counts[symbol] = 0
+
+    def push_price(self, symbol: str, price: float) -> None:
+        if symbol not in self._buffers:
+            self.register_symbol(symbol)
+
+        scaled_val = int(price * self._scale)
+        idx = self._pointers[symbol]
+        self._buffers[symbol][idx] = scaled_val
+        
+        self._pointers[symbol] = (idx + 1) % self._capacity
+        if self._counts[symbol] < self._capacity:
+            self._counts[symbol] += 1
+
+    def get_moving_average(self, symbol: str, window: Optional[int] = None) -> float:
+        if symbol not in self._buffers or self._counts[symbol] == 0:
+            return 0.0
+
+        count = min(window or self._counts[symbol], self._counts[symbol])
+        buf = self._buffers[symbol]
+        head = self._pointers[symbol]
+        
+        mv = memoryview(buf)
+        if head >= count:
+            total = sum(mv[head - count : head])
+        else:
+            total = sum(mv[self._capacity - (count - head) : self._capacity]) + sum(mv[:head])
+
+        return (total / count) / self._scale
