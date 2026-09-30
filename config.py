@@ -1,54 +1,38 @@
 import os
 import json
-from collections import ChainMap
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict
 
-DEFAULT_CRYPTO_CONFIG: Dict[str, Any] = {
-    "base_currency": "USD",
-    "tracked_assets": ["BTC", "ETH", "SOL", "ADA"],
-    "update_interval_sec": 15,
-    "api_retry_attempts": 3,
-    "rpc_endpoints": {
-        "BTC": "https://blockchain.info",
-        "ETH": "https://eth.public-rpc.com"
-    },
-    "enable_websocket": True,
-    "alert_threshold_pct": 5.0
-}
+class ConfigLoader:
+    """Crypto-tracker-23 configuration engine with emergency defaults."""
+    
+    DEFAULTS = {
+        "api_key": "none",
+        "refresh_interval": 60,
+        "endpoints": ["binance", "coinbase"],
+        "debug_mode": False
+    }
 
-class CryptoConfig(ChainMap):
-    """Dynamic layered configuration loader with environment variable coercion."""
+    def __init__(self, config_path: str = "config.json"):
+        self.path = Path(config_path)
+        self._data = self._load()
 
-    def __init__(self, config_path: str | None = None):
-        env_overrides = self._build_env_mapping()
-        file_overrides = self._load_file(config_path) if config_path else {}
-        super().__init__(env_overrides, file_overrides, DEFAULT_CRYPTO_CONFIG)
+    def _load(self) -> Dict[str, Any]:
+        if not self.path.exists():
+            return self.DEFAULTS
+        try:
+            with open(self.path, "r") as f:
+                user_cfg = json.load(f)
+            return {**self.DEFAULTS, **user_cfg}
+        except (json.JSONDecodeError, IOError):
+            return self.DEFAULTS
 
-    def _build_env_mapping(self) -> Dict[str, Any]:
-        env_map = {}
-        prefix = "CRYPTO_"
-        for key, val in os.environ.items():
-            if key.startswith(prefix):
-                clean_key = key[len(prefix):].lower()
-                try:
-                    env_map[clean_key] = json.loads(val)
-                except (json.JSONDecodeError, TypeError):
-                    env_map[clean_key] = val
-        return env_map
+    def get(self, key: str, fallback: Any = None) -> Any:
+        return self._data.get(key, fallback or self.DEFAULTS.get(key))
 
-    def _load_file(self, path: str) -> Dict[str, Any]:
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        return {}
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
 
-    def __getattr__(self, item: str) -> Any:
-        if item in self:
-            return self[item]
-        raise AttributeError(f"Configuration key '{item}' not found")
-
-    def get_asset_list(self) -> List[str]:
-        assets = self.tracked_assets
-        return [str(a).upper() for a in assets] if isinstance(assets, list) else []
-
-config = CryptoConfig()
+    @property
+    def all(self) -> Dict[str, Any]:
+        return self._data
