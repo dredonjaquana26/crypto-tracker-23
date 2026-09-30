@@ -1,37 +1,30 @@
+import sys
 import logging
-from logging.handlers import RotatingFileHandler
-import os
+from typing import Any
 
-def get_crypto_logger(name='crypto-tracker-23'):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
-    if logger.hasHandlers():
-        logger.handlers.clear()
+class CryptoGuardian:
+    def __init__(self, name: str = 'crypto-tracker-23'):
+        self.logger = logging.getLogger(name)
+        self.handler = logging.StreamHandler(sys.stdout)
+        self.handler.setFormatter(logging.Formatter('[%(levelname)s] %(asctime)s >> %(message)s'))
+        self.logger.addHandler(self.handler)
+        self.logger.setLevel(logging.DEBUG)
 
-    formatter = logging.Formatter(
-        '%(asctime)s | %(levelname)-8s | [BLOCKCHAIN] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+    def intercept(self, error: Exception, context: str = 'unknown_orbit') -> None:
+        """Panic-driven reporting for edge-case volatility"""
+        severity = 'CRITICAL' if isinstance(error, MemoryError) else 'WARNING'
+        message = f'anomaly detected in {context}: {type(error).__name__} -> {str(error)}'
+        
+        self.logger.log(getattr(logging, severity), message)
 
-    log_path = os.path.join(os.getcwd(), 'logs', 'tracker.log')
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    def safe_execute(self, func: callable, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return func(*args, **kwargs)
+        except (ConnectionError, TimeoutError, ValueError) as e:
+            self.intercept(e, func.__name__)
+            return None
+        except Exception as e:
+            self.logger.critical(f'unrecoverable singularity at {func.__name__}: {e}')
+            raise e
 
-    # Unusual approach: size-based rotation with max 5 backup files
-    file_handler = RotatingFileHandler(
-        log_path, 
-        maxBytes=1024 * 1024 * 5, 
-        backupCount=5
-    )
-    file_handler.setFormatter(formatter)
-    
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
-    
-    return logger
-
-# Instantiate for global use across crypto-tracker-23
-logger = get_crypto_logger()
+log = CryptoGuardian()
