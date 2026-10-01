@@ -1,59 +1,58 @@
+"""Custom exception hierarchy with self-registering metadata for crypto tracker."""
+
 import time
 from typing import Any, Dict, Optional
 
 
 class CryptoTrackerError(Exception):
-    """Base exception with embedded diagnostic context telemetry."""
+    """Base exception with auto-timestamping and contextual payload binding."""
 
-    code = "ERR_UNKNOWN"
+    registry: Dict[str, type] = {}
 
-    def __init__(
-        self,
-        message: str,
-        symbol: Optional[str] = None,
-        payload: Optional[Dict[str, Any]] = None,
-    ):
-        self.symbol = (symbol or "GLOBAL").upper()
+    def __init__(self, message: str, payload: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.message = message
         self.payload = payload or {}
-        self.timestamp = time.time()
-        formatted_msg = f"[{self.code}][{self.symbol}] {message}"
-        super().__init__(formatted_msg)
+        self.timestamp = time.time_ns()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def __init_subclass__(cls, code: Optional[str] = None, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.code = code or cls.__name__.upper().replace("ERROR", "_ERR")
+        CryptoTrackerError.registry[cls.code] = cls
+
+    def as_dict(self) -> Dict[str, Any]:
         return {
             "error": self.__class__.__name__,
-            "code": self.code,
-            "symbol": self.symbol,
-            "message": str(self),
+            "code": getattr(self, "code", "UNKNOWN"),
+            "message": self.message,
             "payload": self.payload,
-            "timestamp": self.timestamp,
+            "timestamp_ns": self.timestamp,
         }
 
-
-class RateLimitExceeded(CryptoTrackerError):
-    code = "ERR_RATE_LIMIT"
-
-
-class TickerNotFound(CryptoTrackerError):
-    code = "ERR_TICKER_404"
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} code={getattr(self, 'code', 'ERR')} msg='{self.message}'>"
 
 
-class BlockchainSyncError(CryptoTrackerError):
-    code = "ERR_CHAIN_SYNC"
+class MarketDataError(CryptoTrackerError, code="ERR_MARKET_DATA"):
+    """Raised when market feed ingestion or parsing fails."""
 
 
-class ErrorRegistry:
-    """Dynamic error lookup matrix for unified exception handling."""
+class ExchangeRateError(MarketDataError, code="ERR_EXCHANGE_RATE"):
+    """Raised when rate conversion encounters anomalous values."""
 
-    _map = {
-        "ERR_RATE_LIMIT": RateLimitExceeded,
-        "ERR_TICKER_404": TickerNotFound,
-        "ERR_CHAIN_SYNC": BlockchainSyncError,
-    }
 
-    @classmethod
-    def dispatch(
-        cls, code: str, msg: str, symbol: str = "GLOBAL", **kwargs
-    ) -> CryptoTrackerError:
-        exc_cls = cls._map.get(code, CryptoTrackerError)
-        return exc_cls(message=msg, symbol=symbol, payload=kwargs)
+class RateLimitExceeded(CryptoTrackerError, code="ERR_RATE_LIMIT"):
+    """Raised when API threshold is crossed."""
+
+    def retry_after(self) -> int:
+        return int(self.payload.get("backoff_seconds", 60))
+
+
+class WalletValidationError(CryptoTrackerError, code="ERR_INVALID_WALLET"):
+    """Raised when public address checksum fails verification."""
+
+
+def dispatch_error_by_code(code: str, message: str, payload: Optional[Dict] = None) -> CryptoTrackerError:
+    """Dynamically instantiate exceptions based on string codes."""
+    exc_cls = CryptoTrackerError.registry.get(code, CryptoTrackerError)
+    return exc_cls(message, payload=payload)
