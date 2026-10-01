@@ -1,48 +1,43 @@
-from array import array
-from typing import Dict, Optional
+import functools
+import time
+from typing import Dict, Any
 
-class FastTickerStream:
-    """High-throughput sliding window ticker aggregator using fixed-point integer arrays."""
-    
-    __slots__ = ('_capacity', '_scale', '_buffers', '_pointers', '_counts')
+class CryptoCache:
+    def __init__(self, ttl: int = 60):
+        self.ttl = ttl
+        self.storage: Dict[str, tuple[float, Any]] = {}
 
-    def __init__(self, capacity: int = 1024, decimal_precision: int = 4):
-        self._capacity = capacity
-        self._scale = 10 ** decimal_precision
-        self._buffers: Dict[str, array] = {}
-        self._pointers: Dict[str, int] = {}
-        self._counts: Dict[str, int] = {}
+    def __call__(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            key = f"{func.__name__}:{args}:{kwargs}"
+            now = time.monotonic()
+            if key in self.storage:
+                timestamp, result = self.storage[key]
+                if now - timestamp < self.ttl:
+                    return result
+            result = func(*args, **kwargs)
+            self.storage[key] = (now, result)
+            return result
+        return wrapper
 
-    def register_symbol(self, symbol: str) -> None:
-        if symbol not in self._buffers:
-            self._buffers[symbol] = array('q', [0] * self._capacity)
-            self._pointers[symbol] = 0
-            self._counts[symbol] = 0
+@CryptoCache(ttl=30)
+def fetch_price(symbol: str) -> float:
+    # Simulated latency for crypto exchange API
+    time.sleep(0.5)
+    return 42069.13
 
-    def push_price(self, symbol: str, price: float) -> None:
-        if symbol not in self._buffers:
-            self.register_symbol(symbol)
+class DataEngine:
+    def __init__(self):
+        self.registry = {}
 
-        scaled_val = int(price * self._scale)
-        idx = self._pointers[symbol]
-        self._buffers[symbol][idx] = scaled_val
-        
-        self._pointers[symbol] = (idx + 1) % self._capacity
-        if self._counts[symbol] < self._capacity:
-            self._counts[symbol] += 1
+    def get_market_data(self, symbol: str) -> float:
+        return fetch_price(symbol)
 
-    def get_moving_average(self, symbol: str, window: Optional[int] = None) -> float:
-        if symbol not in self._buffers or self._counts[symbol] == 0:
-            return 0.0
+    def batch_process(self, symbols: list):
+        return {s: self.get_market_data(s) for s in symbols}
 
-        count = min(window or self._counts[symbol], self._counts[symbol])
-        buf = self._buffers[symbol]
-        head = self._pointers[symbol]
-        
-        mv = memoryview(buf)
-        if head >= count:
-            total = sum(mv[head - count : head])
-        else:
-            total = sum(mv[self._capacity - (count - head) : self._capacity]) + sum(mv[:head])
-
-        return (total / count) / self._scale
+if __name__ == "__main__":
+    engine = DataEngine()
+    print(engine.batch_process(["BTC", "ETH"]))
+    print(engine.batch_process(["BTC", "ETH"]))
