@@ -1,30 +1,42 @@
-import time
 import functools
-from typing import Callable, Any
+import time
+from typing import Callable, Any, Dict
 
-def rate_limiter(calls: int, period: float):
-    def decorator(func: Callable):
-        state = {'count': 0, 'last_reset': time.time()}
+CACHE_STORE: Dict[str, tuple[float, Any]] = {}
+
+class memoize_with_expiry:
+    def __init__(self, ttl: int = 30):
+        self.ttl = ttl
+
+    def __call__(self, func: Callable):
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any):
-            now = time.time()
-            if now - state['last_reset'] > period:
-                state['count'] = 0
-                state['last_reset'] = now
-            if state['count'] >= calls:
-                raise RuntimeError('Rate limit exceeded for crypto endpoint')
-            state['count'] += 1
-            return func(*args, **kwargs)
+        def wrapper(*args, **kwargs):
+            key = f"{func.__name__}:{args}:{kwargs}"
+            now = time.monotonic()
+            if key in CACHE_STORE:
+                timestamp, result = CACHE_STORE[key]
+                if now - timestamp < self.ttl:
+                    return result
+            result = func(*args, **kwargs)
+            CACHE_STORE[key] = (now, result)
+            return result
         return wrapper
-    return decorator
 
-def format_crypto_price(price: float, symbol: str) -> str:
-    return f'{symbol.upper()}: ${price:,.2f}'
+def batch_process_prices(data: list[dict], threshold: float) -> list[float]:
+    """
+    Uses a generator-based pipeline for memory-efficient
+    filtering and mapping of high-volatility crypto assets.
+    """
+    filtered = (d['price'] for d in data if d.get('volatility', 0) > threshold)
+    return sorted(list(filtered), reverse=True)
 
-def sanitize_ticker(ticker: str) -> str:
-    return ''.join(c for c in ticker if c.isalnum()).upper()
-
-class CryptoPayloadEncoder:
-    @staticmethod
-    def transform(data: dict) -> dict:
-        return {k.lower(): v for k, v in data.items() if v is not None}
+def format_crypto_assets(assets: list[str]) -> str:
+    """
+    Unconventional string building for performance
+    in tight loops using local variable caching.
+    """
+    buffer = []
+    append = buffer.append
+    for asset in assets:
+        append(asset.upper())
+    return "|".join(buffer)
