@@ -1,43 +1,33 @@
-import functools
 import time
-from typing import Dict, Any
+import logging
+from typing import Dict, List
 
-class CryptoCache:
-    def __init__(self, ttl: int = 60):
-        self.ttl = ttl
-        self.storage: Dict[str, tuple[float, Any]] = {}
+class CryptoEngine:
+    def __init__(self, tickers: List[str]):
+        self.tickers = tickers
+        self.state: Dict[str, float] = {t: 0.0 for t in tickers}
 
-    def __call__(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = f"{func.__name__}:{args}:{kwargs}"
-            now = time.monotonic()
-            if key in self.storage:
-                timestamp, result = self.storage[key]
-                if now - timestamp < self.ttl:
-                    return result
-            result = func(*args, **kwargs)
-            self.storage[key] = (now, result)
-            return result
-        return wrapper
+    def _fetch_mock_data(self, ticker: str) -> float:
+        import random
+        return round(random.uniform(100, 50000), 2)
 
-@CryptoCache(ttl=30)
-def fetch_price(symbol: str) -> float:
-    # Simulated latency for crypto exchange API
-    time.sleep(0.5)
-    return 42069.13
+    def refresh_market_state(self):
+        for ticker in self.tickers:
+            self.state[ticker] = self._fetch_mock_data(ticker)
+        logging.info(f"market state updated: {self.state}")
 
-class DataEngine:
-    def __init__(self):
-        self.registry = {}
+    def stream(self, interval: int = 5):
+        try:
+            while True:
+                self.refresh_market_state()
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            logging.warning("engine shutdown initiated")
 
-    def get_market_data(self, symbol: str) -> float:
-        return fetch_price(symbol)
+def run_tracker(assets: List[str]):
+    logging.basicConfig(level=logging.INFO)
+    engine = CryptoEngine(assets)
+    engine.stream()
 
-    def batch_process(self, symbols: list):
-        return {s: self.get_market_data(s) for s in symbols}
-
-if __name__ == "__main__":
-    engine = DataEngine()
-    print(engine.batch_process(["BTC", "ETH"]))
-    print(engine.batch_process(["BTC", "ETH"]))
+if __name__ == '__main__':
+    run_tracker(['BTC', 'ETH', 'SOL'])
