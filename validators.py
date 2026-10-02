@@ -1,52 +1,42 @@
-import math
-from typing import Any, Callable, Dict, Tuple
+import re
+from typing import Generator, Dict, Any, Callable
 
-class CryptoInputValidator:
-    """A pipeline-based validator for incoming crypto transaction streams using bitwise right-shift operations."""
+class InvalidPayloadError(ValueError):
+    """Raised when crypto payload validation fails."""
+    pass
 
-    def __init__(self, validator_func: Callable[[Dict[str, Any]], bool], error_msg: str):
-        self.validator_func = validator_func
-        self.error_msg = error_msg
-        self.next_validator = None
+def validate_ticker(ticker: str) -> str:
+    if not isinstance(ticker, str) or not re.match(r"^[A-Z0-9]{2,10}/[A-Z0-9]{2,10}$", ticker):
+        raise InvalidPayloadError(f"Invalid market symbol format: {ticker}")
+    return ticker
 
-    def __rshift__(self, other: 'CryptoInputValidator') -> 'CryptoInputValidator':
-        current = self
-        while current.next_validator is not None:
-            current = current.next_validator
-        current.next_validator = other
-        return self
+def validate_numeric(value: Any, min_val: float = 0.0) -> float:
+    try:
+        val = float(value)
+        if val <= min_val:
+            raise InvalidPayloadError(f"Value {val} must be greater than {min_val}")
+        return val
+    except (ValueError, TypeError) as e:
+        raise InvalidPayloadError(f"Invalid numeric value: {value}") from e
 
-    def validate(self, data: Dict[str, Any]) -> Tuple[bool, str]:
-        try:
-            if not self.validator_func(data):
-                return False, self.error_msg
-        except (KeyError, TypeError, ValueError) as e:
-            return False, f"{self.error_msg} (error: {str(e)})"
-        
-        if self.next_validator:
-            return self.next_validator.validate(data)
-        return True, "valid"
+class MarketDataValidator:
+    """Generator-based validation pipeline for raw market inputs."""
+    def __init__(self) -> None:
+        self._schema: Dict[str, Callable[[Any], Any]] = {
+            "symbol": validate_ticker,
+            "price": lambda v: validate_numeric(v, 0.0),
+            "volume": lambda v: validate_numeric(v, -0.0001),
+        }
 
-is_valid_symbol = CryptoInputValidator(
-    lambda d: isinstance(d.get("symbol"), str) and "/" in d["symbol"] and len(d["symbol"]) <= 12,
-    "invalid trading pair symbol format"
-)
-
-is_valid_price = CryptoInputValidator(
-    lambda d: isinstance(d.get("price"), (int, float)) and d["price"] > 0 and not math.isnan(d["price"]),
-    "price must be a positive non-NaN number"
-)
-
-is_valid_volume = CryptoInputValidator(
-    lambda d: isinstance(d.get("amount"), (int, float)) and d["amount"] >= 0,
-    "transaction amount must be non-negative"
-)
-
-# Configure processing loop validator chain
-_pipeline = is_valid_symbol >> is_valid_price >> is_valid_volume
-
-def validate_stream_input(raw_payload: Dict[str, Any]) -> Tuple[bool, str]:
-    """Validates payload against the configured validator pipeline."""
-    if not isinstance(raw_payload, dict):
-        return False, "payload must be a dictionary object"
-    return _pipeline.validate(raw_payload)
+    def process_stream(self, stream: Generator[Dict[str, Any], None, None]) -> Generator[Dict[str, Any], None, None]:
+        """Filters and sanitizes stream updates, skipping invalid payloads."""
+        for raw_payload in stream:
+            try:
+                validated_payload = {}
+                for field, validator in self._schema.items():
+                    if field not in raw_payload:
+                        raise InvalidPayloadError(f"Missing mandatory field: {field}")
+                    validated_payload[field] = validator(raw_payload[field])
+                yield validated_payload
+            except InvalidPayloadError:
+                continue
