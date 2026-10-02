@@ -1,38 +1,43 @@
 import os
 import json
-from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 class ConfigLoader:
-    """Crypto-tracker-23 configuration engine with emergency defaults."""
-    
-    DEFAULTS = {
-        "api_key": "none",
-        "refresh_interval": 60,
-        "endpoints": ["binance", "coinbase"],
-        "debug_mode": False
-    }
+    API_URL: str = "https://api.coingecko.com/api/v3"
+    UPDATE_INTERVAL_SEC: int = 60
+    TRACKED_COINS: list = ["bitcoin", "ethereum", "solana"]
+    DEBUG_MODE: bool = False
 
-    def __init__(self, config_path: str = "config.json"):
-        self.path = Path(config_path)
-        self._data = self._load()
+    def __init__(self, filepath: str = "config.json"):
+        self._file_data = {}
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r") as f:
+                    self._file_data = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
 
-    def _load(self) -> Dict[str, Any]:
-        if not self.path.exists():
-            return self.DEFAULTS
+    def __getattribute__(self, name: str) -> Any:
+        if name.startswith("_") or name not in ConfigLoader.__annotations__:
+            return super().__getattribute__(name)
+
+        default_val = getattr(ConfigLoader, name)
+        expected_type = type(default_val)
+
+        val = os.environ.get(f"CRYPTO_{name}")
+        if val is None:
+            val = self._file_data.get(name, default_val)
+
+        return self._cast(val, expected_type)
+
+    def _cast(self, val: Any, target_type: type) -> Any:
+        if isinstance(val, target_type):
+            return val
+        if target_type is bool:
+            return str(val).lower() in ("true", "1", "yes", "on")
+        if target_type is list and isinstance(val, str):
+            return [item.strip() for item in val.split(",") if item.strip()]
         try:
-            with open(self.path, "r") as f:
-                user_cfg = json.load(f)
-            return {**self.DEFAULTS, **user_cfg}
-        except (json.JSONDecodeError, IOError):
-            return self.DEFAULTS
-
-    def get(self, key: str, fallback: Any = None) -> Any:
-        return self._data.get(key, fallback or self.DEFAULTS.get(key))
-
-    def __getitem__(self, key: str) -> Any:
-        return self._data[key]
-
-    @property
-    def all(self) -> Dict[str, Any]:
-        return self._data
+            return target_type(val)
+        except (ValueError, TypeError):
+            return val
