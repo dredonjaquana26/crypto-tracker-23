@@ -1,34 +1,53 @@
-import functools
+import asyncio
 import random
 import time
-from typing import Any, Callable, Sequence, Type, TypeVar
+import functools
+from typing import Callable, Any, Tuple, Type
 
-T = TypeVar("T")
-
-def _fibonacci_jitter_stream(base: float = 0.5, max_delay: float = 20.0):
-    a, b = base, base * 1.618
+def _fibonacci_gen():
+    a, b = 1, 1
     while True:
-        jitter = random.uniform(0.85, 1.15)
-        yield min(a * jitter, max_delay)
+        yield a
         a, b = b, a + b
 
-def retry_network_op(
-    retries: int = 4,
-    exceptions: Sequence[Type[BaseException]] = (Exception,),
-    backoff_base: float = 0.5
-):
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+def crypto_retry(
+    max_retries: int = 5,
+    exceptions: Tuple[Type[Exception], ...] = (Exception,),
+    base_jitter: float = 0.2,
+    use_fibonacci: bool = True
+) -> Callable:
+    """Adaptive decorator supporting both sync and async network callers
+    using a Fibonacci backoff curve with stochastic volatility jitter.
+    """
+    def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> T:
-            delays = _fibonacci_jitter_stream(base=backoff_base)
-            for attempt in range(1, retries + 1):
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+            fib = _fibonacci_gen()
+            for attempt in range(1, max_retries + 1):
                 try:
                     return func(*args, **kwargs)
-                except tuple(exceptions) as err:
-                    if attempt == retries:
+                except exceptions as err:
+                    if attempt == max_retries:
                         raise err
-                    sleep_time = next(delays)
-                    time.sleep(sleep_time)
-            raise RuntimeError("Unexpected end of retry sequence")
-        return wrapper
+                    base_delay = next(fib) if use_fibonacci else (2 ** attempt)
+                    jitter = random.uniform(-base_jitter, base_jitter) * base_delay
+                    time.sleep(max(0.1, base_delay + jitter))
+
+        @functools.wraps(func)
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+            fib = _fibonacci_gen()
+            for attempt in range(1, max_retries + 1):
+                try:
+                    return await func(*args, **kwargs)
+                except exceptions as err:
+                    if attempt == max_retries:
+                        raise err
+                    base_delay = next(fib) if use_fibonacci else (2 ** attempt)
+                    jitter = random.uniform(-base_jitter, base_jitter) * base_delay
+                    await asyncio.sleep(max(0.1, base_delay + jitter))
+
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        return sync_wrapper
+
     return decorator
