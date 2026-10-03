@@ -1,42 +1,42 @@
-import functools
 import time
-from typing import Callable, Any, Dict
+import functools
+import logging
 
-CACHE_STORE: Dict[str, tuple[float, Any]] = {}
+logger = logging.getLogger('crypto-tracker-23')
 
-class memoize_with_expiry:
-    def __init__(self, ttl: int = 30):
-        self.ttl = ttl
+class CryptoCircuitBreaker:
+    def __init__(self, retries=3, delay=1.0):
+        self.retries = retries
+        self.delay = delay
 
-    def __call__(self, func: Callable):
+    def __call__(self, func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            key = f"{func.__name__}:{args}:{kwargs}"
-            now = time.monotonic()
-            if key in CACHE_STORE:
-                timestamp, result = CACHE_STORE[key]
-                if now - timestamp < self.ttl:
-                    return result
-            result = func(*args, **kwargs)
-            CACHE_STORE[key] = (now, result)
-            return result
+            last_ex = None
+            for attempt in range(self.retries):
+                try:
+                    return func(*args, **kwargs)
+                except (ConnectionError, TimeoutError) as e:
+                    last_ex = e
+                    logger.warning(f"Retry {attempt+1}/{self.retries} after {e}")
+                    time.sleep(self.delay * (2 ** attempt))
+            logger.error("Circuit broken: maximum retries reached")
+            raise last_ex
         return wrapper
 
-def batch_process_prices(data: list[dict], threshold: float) -> list[float]:
-    """
-    Uses a generator-based pipeline for memory-efficient
-    filtering and mapping of high-volatility crypto assets.
-    """
-    filtered = (d['price'] for d in data if d.get('volatility', 0) > threshold)
-    return sorted(list(filtered), reverse=True)
+@CryptoCircuitBreaker(retries=3, delay=0.5)
+def fetch_price_safely(symbol, api_client):
+    if not symbol or not isinstance(symbol, str):
+        raise ValueError(f"Invalid symbol format: {symbol}")
+    
+    response = api_client.get(f"/v1/ticker/{symbol.upper()}")
+    if response.status_code == 429:
+        raise ConnectionError("Rate limit exceeded")
+    
+    return response.json().get('price', 0.0)
 
-def format_crypto_assets(assets: list[str]) -> str:
-    """
-    Unconventional string building for performance
-    in tight loops using local variable caching.
-    """
-    buffer = []
-    append = buffer.append
-    for asset in assets:
-        append(asset.upper())
-    return "|".join(buffer)
+def sanitize_response(data, fallback=0.0):
+    try:
+        return float(data) if data is not None else fallback
+    except (ValueError, TypeError):
+        return fallback
