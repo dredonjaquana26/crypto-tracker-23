@@ -1,52 +1,30 @@
-import math
-from typing import Callable, Any, Dict, Iterable, Generator
+from decimal import Decimal
+from datetime import datetime
+from typing import Union, List
 
+def sanitize_price(val: Union[str, float, int]) -> Decimal:
+    return Decimal(str(val)).quantize(Decimal('0.00000001'))
 
-class CryptoStreamPipeline:
-    """Pipeable transform engine using bitwise OR operator for crypto ticker streams."""
+def format_timestamp(ts: Union[int, float]) -> str:
+    return datetime.fromtimestamp(ts).isoformat()
 
-    def __init__(self, transform_fn: Callable[[Dict[str, Any]], Dict[str, Any]]):
-        self.transform_fn = transform_fn
+def batch_normalize(data: List[dict], key: str) -> List[Decimal]:
+    return [sanitize_price(item[key]) for item in data if key in item]
 
-    def __or__(self, next_stage: "CryptoStreamPipeline") -> "CryptoStreamPipeline":
-        def chained(data: Dict[str, Any]) -> Dict[str, Any]:
-            return next_stage.transform_fn(self.transform_fn(data))
-        return CryptoStreamPipeline(chained)
+def volatility_score(prices: List[Decimal]) -> Decimal:
+    if len(prices) < 2:
+        return Decimal('0')
+    spread = max(prices) - min(prices)
+    return (spread / max(prices)) * 100
 
-    def process(self, stream: Iterable[Dict[str, Any]]) -> Generator[Dict[str, Any], None, None]:
-        for tick in stream:
-            try:
-                yield self.transform_fn(tick.copy())
-            except (KeyError, ValueError, TypeError):
-                continue
+def generate_ticker_slug(base: str, quote: str) -> str:
+    return f"{base.upper()}_{quote.upper()}"
 
+def partition_stream(items: List[dict], chunk_size: int = 10):
+    for i in range(0, len(items), chunk_size):
+        yield items[i:i + chunk_size]
 
-def normalize_symbol() -> CryptoStreamPipeline:
-    return CryptoStreamPipeline(
-        lambda item: {**item, "symbol": item.get("symbol", "").strip().upper()}
-    )
-
-
-def compute_vwap() -> CryptoStreamPipeline:
-    def transform(item: Dict[str, Any]) -> Dict[str, Any]:
-        price = float(item.get("price", 0.0))
-        volume = float(item.get("volume", 0.0))
-        item["notional_value"] = round(price * volume, 4)
-        item["is_whale_order"] = item["notional_value"] >= 100_000.0
-        return item
-    return CryptoStreamPipeline(transform)
-
-
-def calculate_log_return(previous_price: float) -> CryptoStreamPipeline:
-    def transform(item: Dict[str, Any]) -> Dict[str, Any]:
-        current_price = float(item.get("price", 0.0))
-        if previous_price > 0 and current_price > 0:
-            item["log_return"] = round(math.log(current_price / previous_price), 6)
-        else:
-            item["log_return"] = 0.0
-        return item
-    return CryptoStreamPipeline(transform)
-
-
-def build_crypto_processor(prev_price: float = 0.0) -> CryptoStreamPipeline:
-    return normalize_symbol() | compute_vwap() | calculate_log_return(prev_price)
+def calculate_roi(initial: Decimal, current: Decimal) -> Decimal:
+    if initial == 0:
+        return Decimal('0')
+    return ((current - initial) / initial) * 100
