@@ -1,43 +1,36 @@
 import os
 import json
-from typing import Any
+from typing import Any, Dict
 
-class ConfigLoader:
-    API_URL: str = "https://api.coingecko.com/api/v3"
-    UPDATE_INTERVAL_SEC: int = 60
-    TRACKED_COINS: list = ["bitcoin", "ethereum", "solana"]
-    DEBUG_MODE: bool = False
+class CryptoConfig:
+    _DEFAULTS = {
+        "api_key": "anonymous",
+        "base_currency": "USD",
+        "refresh_interval": 60,
+        "endpoints": ["binance", "coinbase"]
+    }
 
-    def __init__(self, filepath: str = "config.json"):
-        self._file_data = {}
-        if os.path.exists(filepath):
-            try:
-                with open(filepath, "r") as f:
-                    self._file_data = json.load(f)
-            except (json.JSONDecodeError, OSError):
-                pass
+    def __init__(self, path: str = "config.json"):
+        self._path = path
+        self._data = self._load_from_disk()
 
-    def __getattribute__(self, name: str) -> Any:
-        if name.startswith("_") or name not in ConfigLoader.__annotations__:
-            return super().__getattribute__(name)
-
-        default_val = getattr(ConfigLoader, name)
-        expected_type = type(default_val)
-
-        val = os.environ.get(f"CRYPTO_{name}")
-        if val is None:
-            val = self._file_data.get(name, default_val)
-
-        return self._cast(val, expected_type)
-
-    def _cast(self, val: Any, target_type: type) -> Any:
-        if isinstance(val, target_type):
-            return val
-        if target_type is bool:
-            return str(val).lower() in ("true", "1", "yes", "on")
-        if target_type is list and isinstance(val, str):
-            return [item.strip() for item in val.split(",") if item.strip()]
+    def _load_from_disk(self) -> Dict[str, Any]:
+        if not os.path.exists(self._path):
+            return self._DEFAULTS
         try:
-            return target_type(val)
-        except (ValueError, TypeError):
-            return val
+            with open(self._path, "r") as f:
+                loaded = json.load(f)
+                return {**self._DEFAULTS, **loaded}
+        except (json.JSONDecodeError, IOError):
+            return self._DEFAULTS
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data.get(key, default or self._DEFAULTS.get(key))
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
+
+    def __repr__(self) -> str:
+        return f"CryptoConfig({self._data})"
+
+settings = CryptoConfig()
