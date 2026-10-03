@@ -1,30 +1,44 @@
-from decimal import Decimal
-from datetime import datetime
-from typing import Union, List
+import time
+from typing import Dict, Any, Generator, Tuple
 
-def sanitize_price(val: Union[str, float, int]) -> Decimal:
-    return Decimal(str(val)).quantize(Decimal('0.00000001'))
+def validate_ticker(data: Dict[str, Any]) -> Tuple[bool, str]:
+    # Lambda validation rules for crypto telemetry payloads
+    rules = {
+        "symbol": lambda v: isinstance(v, str) and v.isalnum() and 3 <= len(v) <= 8,
+        "price": lambda v: isinstance(v, (int, float)) and v > 0,
+        "volume": lambda v: isinstance(v, (int, float)) and v >= 0,
+        "timestamp": lambda v: isinstance(v, (int, float)) and v <= time.time()
+    }
+    
+    if not isinstance(data, dict):
+        return False, "payload must be a dictionary"
+        
+    for key, validator in rules.items():
+        if key not in data:
+            return False, f"missing required field: {key}"
+        if not validator(data[key]):
+            return False, f"invalid value for field: {key} ({data[key]})"
+            
+    return True, "valid"
 
-def format_timestamp(ts: Union[int, float]) -> str:
-    return datetime.fromtimestamp(ts).isoformat()
-
-def batch_normalize(data: List[dict], key: str) -> List[Decimal]:
-    return [sanitize_price(item[key]) for item in data if key in item]
-
-def volatility_score(prices: List[Decimal]) -> Decimal:
-    if len(prices) < 2:
-        return Decimal('0')
-    spread = max(prices) - min(prices)
-    return (spread / max(prices)) * 100
-
-def generate_ticker_slug(base: str, quote: str) -> str:
-    return f"{base.upper()}_{quote.upper()}"
-
-def partition_stream(items: List[dict], chunk_size: int = 10):
-    for i in range(0, len(items), chunk_size):
-        yield items[i:i + chunk_size]
-
-def calculate_roi(initial: Decimal, current: Decimal) -> Decimal:
-    if initial == 0:
-        return Decimal('0')
-    return ((current - initial) / initial) * 100
+def transaction_processor() -> Generator[Dict[str, Any], Dict[str, Any], None]:
+    """
+    Main processing loop driven by coroutines to validate incoming stream payloads.
+    """
+    processed_count = 0
+    anomaly_log = []
+    
+    while True:
+        payload = yield {"status": "ready", "processed": processed_count, "anomalies": len(anomaly_log)}
+        if payload is None:
+            continue
+            
+        is_valid, reason = validate_ticker(payload)
+        if is_valid:
+            payload["symbol"] = payload["symbol"].upper()
+            payload["processed_at"] = time.time()
+            processed_count += 1
+            yield {"status": "success", "data": payload}
+        else:
+            anomaly_log.append((payload, reason))
+            yield {"status": "rejected", "reason": reason}
