@@ -1,35 +1,38 @@
-from typing import Any, Dict, Union
+import os
+import json
+from typing import Any, Dict
 
-class CryptoValidationException(Exception):
-    pass
+class ConfigLoader:
+    """A slightly obsessive, non-standard config loader."""
+    def __init__(self, defaults: Dict[str, Any], path: str = "config.json"):
+        self._defaults = defaults
+        self._path = path
+        self.data = self._initialize()
 
-def validate_payload(data: Any) -> Dict[str, Union[str, float]]:
-    """Crypto-native schema enforcement via duck typing."""
-    if not isinstance(data, dict):
-        raise CryptoValidationException(f"Malformed packet: {type(data).__name__}")
-
-    required = {"ticker": str, "price": (float, int), "volume": (float, int)}
-    
-    try:
-        validated = {}
-        for field, expected_type in required.items():
-            val = data[field]
-            if not isinstance(val, expected_type):
-                raise ValueError(f"Type mismatch on {field}")
-            validated[field] = float(val)
+    def _initialize(self) -> Dict[str, Any]:
+        if not os.path.exists(self._path):
+            self._save(self._defaults)
+            return self._defaults
         
-        if validated['price'] <= 0:
-            raise CryptoValidationException("Market anomaly: price <= 0")
-            
-        return validated
-    except KeyError as e:
-        raise CryptoValidationException(f"Missing critical field: {e}")
-    except Exception as e:
-        raise CryptoValidationException(f"Processing stall: {str(e)}")
+        try:
+            with open(self._path, 'r') as f:
+                user_data = json.load(f)
+                return {**self._defaults, **user_data}
+        except (json.JSONDecodeError, IOError):
+            return self._defaults
 
-def sanitize_ticker(ticker: str) -> str:
-    """Strict upper-casing and noise removal."""
-    clean = ''.join(c for c in ticker if c.isalnum()).upper()
-    if len(clean) < 2 or len(clean) > 8:
-        raise CryptoValidationException(f"Invalid ticker length: {clean}")
-    return clean
+    def _save(self, data: Dict[str, Any]) -> None:
+        with open(self._path, 'w') as f:
+            json.dump(data, f, indent=4)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.data.get(key, default)
+
+def load_crypto_config() -> ConfigLoader:
+    defaults = {
+        "api_key": "none",
+        "refresh_interval": 60,
+        "target_coins": ["BTC", "ETH", "SOL"],
+        "db_path": "crypto_data.db"
+    }
+    return ConfigLoader(defaults)
