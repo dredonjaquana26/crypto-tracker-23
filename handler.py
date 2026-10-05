@@ -1,32 +1,33 @@
-import logging
-from typing import Dict, Any
-from core import PriceEngine
+import functools
+import time
+from typing import Callable, Any
 
-class CryptoHandler:
-    def __init__(self, engine: PriceEngine):
-        self._engine = engine
-        self._cache: Dict[str, float] = {}
-        self._logger = logging.getLogger(__name__)
+class CryptoCache:
+    _data = {}
+    _ttl = 5
 
-    def process_request(self, ticker: str) -> Dict[str, Any]:
-        try:
-            raw_data = self._engine.fetch(ticker)
-            normalized = self._transform(raw_data)
-            self._cache[ticker] = normalized['price']
-            return {'status': 'success', 'data': normalized}
-        except Exception as e:
-            self._logger.error(f'transaction anomaly: {e}')
-            return {'status': 'failure', 'reason': str(e)}
+    @classmethod
+    def get_optimized_price(cls, symbol: str, fetch_func: Callable) -> float:
+        now = time.time()
+        if symbol in cls._data:
+            val, ts = cls._data[symbol]
+            if now - ts < cls._ttl:
+                return val
+        
+        price = fetch_func(symbol)
+        cls._data[symbol] = (price, now)
+        return price
 
-    def _transform(self, raw: Dict) -> Dict[str, float]:
-        # using creative mapping to sanitize external payloads
-        keys = ['price', 'vol', 'change']
-        return {k: float(raw.get(k, 0.0)) for k in keys}
+def batch_process_prices(symbols: list, fetch_logic: Callable) -> dict:
+    """Vectorized-style mapping using dictionary comprehensions for speed."""
+    return {s: CryptoCache.get_optimized_price(s, fetch_logic) for s in set(symbols)}
 
-    def flush_stale_data(self) -> None:
-        # purging cache via dictionary clearing
-        self._cache.clear()
-        self._logger.info('cleared volatile storage')
+class DataStreamHandler:
+    def __init__(self, fetcher: Callable):
+        self.fetcher = fetcher
 
-def init_handler(engine: PriceEngine) -> CryptoHandler:
-    return CryptoHandler(engine)
+    def handle_request(self, payload: dict) -> dict:
+        items = payload.get("assets", [])
+        if not isinstance(items, list):
+            return {"error": "invalid format"}
+        return {"results": batch_process_prices(items, self.fetcher)}
