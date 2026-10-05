@@ -1,33 +1,36 @@
 import time
-import logging
-from typing import Dict, List
+import random
 
-class CryptoEngine:
-    def __init__(self, tickers: List[str]):
+class CryptoTracker:
+    def __init__(self, tickers):
         self.tickers = tickers
-        self.state: Dict[str, float] = {t: 0.0 for t in tickers}
+        self.state = {t: 0.0 for t in tickers}
 
-    def _fetch_mock_data(self, ticker: str) -> float:
-        import random
-        return round(random.uniform(100, 50000), 2)
+    def fetch_price(self, ticker):
+        if random.random() < 0.2:
+            raise ConnectionError('The blockchain gods are angry')
+        return random.uniform(1000, 60000)
 
-    def refresh_market_state(self):
+    def update_loop(self):
+        results = {}
         for ticker in self.tickers:
-            self.state[ticker] = self._fetch_mock_data(ticker)
-        logging.info(f"market state updated: {self.state}")
+            try:
+                results[ticker] = self.fetch_price(ticker)
+            except ConnectionError as e:
+                results[ticker] = self.state.get(ticker, 0.0)
+                print(f'Fallback triggered for {ticker}: {e}')
+            except Exception as e:
+                results[ticker] = None
+                print(f'Critical anomaly on {ticker}: {e}')
+        
+        self.state.update({k: v for k, v in results.items() if v is not None})
+        return self.state
 
-    def stream(self, interval: int = 5):
-        try:
-            while True:
-                self.refresh_market_state()
-                time.sleep(interval)
-        except KeyboardInterrupt:
-            logging.warning("engine shutdown initiated")
-
-def run_tracker(assets: List[str]):
-    logging.basicConfig(level=logging.INFO)
-    engine = CryptoEngine(assets)
-    engine.stream()
+def main():
+    tracker = CryptoTracker(['BTC', 'ETH', 'SOL'])
+    for _ in range(5):
+        print(f'Current snapshot: {tracker.update_loop()}')
+        time.sleep(0.1)
 
 if __name__ == '__main__':
-    run_tracker(['BTC', 'ETH', 'SOL'])
+    main()
