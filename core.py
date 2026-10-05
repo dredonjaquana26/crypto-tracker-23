@@ -1,36 +1,42 @@
 import time
-import random
+import logging
+from typing import Dict, List, Optional
 
-class CryptoTracker:
-    def __init__(self, tickers):
-        self.tickers = tickers
-        self.state = {t: 0.0 for t in tickers}
+class CryptoEngine:
+    def __init__(self, tickers: List[str]):
+        self.assets = {ticker: 0.0 for ticker in tickers}
+        self.logger = logging.getLogger('crypto-tracker-23')
 
-    def fetch_price(self, ticker):
-        if random.random() < 0.2:
-            raise ConnectionError('The blockchain gods are angry')
-        return random.uniform(1000, 60000)
+    def refresh_state(self, updates: Dict[str, float]) -> None:
+        self.assets.update({k: v for k, v in updates.items() if k in self.assets})
 
-    def update_loop(self):
-        results = {}
-        for ticker in self.tickers:
-            try:
-                results[ticker] = self.fetch_price(ticker)
-            except ConnectionError as e:
-                results[ticker] = self.state.get(ticker, 0.0)
-                print(f'Fallback triggered for {ticker}: {e}')
-            except Exception as e:
-                results[ticker] = None
-                print(f'Critical anomaly on {ticker}: {e}')
-        
-        self.state.update({k: v for k, v in results.items() if v is not None})
-        return self.state
+    def get_summary(self) -> str:
+        data = [f"{k}: {v:.2f}" for k, v in self.assets.items()]
+        return " | ".join(data)
 
-def main():
-    tracker = CryptoTracker(['BTC', 'ETH', 'SOL'])
-    for _ in range(5):
-        print(f'Current snapshot: {tracker.update_loop()}')
-        time.sleep(0.1)
+class AsyncMonitor:
+    def __init__(self, engine: CryptoEngine):
+        self.engine = engine
+        self.active = True
 
-if __name__ == '__main__':
-    main()
+    def run_loop(self, interval: int = 5):
+        try:
+            while self.active:
+                snapshot = self.engine.get_summary()
+                print(f"[TICKER] {snapshot}")
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            self.stop()
+
+    def stop(self):
+        self.active = False
+        print("Graceful shutdown of monitor")
+
+def bootstrap():
+    engine = CryptoEngine(['BTC', 'ETH', 'SOL'])
+    monitor = AsyncMonitor(engine)
+    return monitor
+
+if __name__ == "__main__":
+    tracker = bootstrap()
+    tracker.run_loop()
