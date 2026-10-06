@@ -1,33 +1,36 @@
+import logging
+import functools
+
 class CryptoTrackerError(Exception):
-    """Base exception for the crypto-tracker-23 ecosystem."""
+    """Base exception for crypto-tracker-23"""
     pass
 
-class NetworkThrottlingError(CryptoTrackerError):
-    """Raised when the exchange rate limits are hit."""
+class ExchangeOfflineError(CryptoTrackerError):
+    """Raised when the crypto exchange returns 5xx"""
     pass
 
-class PayloadCorruptionError(CryptoTrackerError):
-    """Raised when JSON data is malformed or missing keys."""
+class RateLimitExceeded(CryptoTrackerError):
+    """Raised when hitting API thresholds"""
     pass
 
-class IncompleteTickerState(CryptoTrackerError):
-    """Raised when critical coin metadata is absent."""
-    pass
+logger = logging.getLogger('crypto-tracker-23')
 
-class HandlerContext:
-    """A context manager for graceful exit of crypto streams."""
-    def __enter__(self):
-        return self
+def resilient_handler(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except (ExchangeOfflineError, RateLimitExceeded) as e:
+            logger.error(f'unrecoverable crypto state: {type(e).__name__}')
+            return None
+        except Exception as e:
+            logger.critical(f'unexpected chaos occurred: {str(e)}')
+            raise
+    return wrapper
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type:
-            print(f"[!] {exc_type.__name__} trapped: {exc_val}")
-            return True
-        return False
-
-def validate_ticker(data: dict):
-    if not isinstance(data, dict):
-        raise PayloadCorruptionError("Ticker data must be a dictionary")
-    if "price" not in data:
-        raise IncompleteTickerState("Missing price field in ticker payload")
+def validate_response(data):
+    if not data or not isinstance(data, dict):
+        raise CryptoTrackerError('malformed payload received')
+    if 'price' not in data:
+        raise ValueError('missing mandatory price field')
     return True
