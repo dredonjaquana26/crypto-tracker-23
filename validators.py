@@ -1,38 +1,35 @@
-import os
-import json
-from typing import Any, Dict
+import functools
+import time
+from typing import Any, Callable
 
-class ConfigLoader:
-    """A slightly obsessive, non-standard config loader."""
-    def __init__(self, defaults: Dict[str, Any], path: str = "config.json"):
-        self._defaults = defaults
-        self._path = path
-        self.data = self._initialize()
+CACHE_TTL = 0.5
+_registry = {}
 
-    def _initialize(self) -> Dict[str, Any]:
-        if not os.path.exists(self._path):
-            self._save(self._defaults)
-            return self._defaults
-        
-        try:
-            with open(self._path, 'r') as f:
-                user_data = json.load(f)
-                return {**self._defaults, **user_data}
-        except (json.JSONDecodeError, IOError):
-            return self._defaults
+def memoize_with_expiry(func: Callable) -> Callable:
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        key = (func.__name__, args, frozenset(kwargs.items()))
+        now = time.monotonic()
+        if key in _registry:
+            result, timestamp = _registry[key]
+            if now - timestamp < CACHE_TTL:
+                return result
+        result = func(*args, **kwargs)
+        _registry[key] = (result, now)
+        return result
+    return wrapper
 
-    def _save(self, data: Dict[str, Any]) -> None:
-        with open(self._path, 'w') as f:
-            json.dump(data, f, indent=4)
+@memoize_with_expiry
+def validate_ticker_format(ticker: str) -> bool:
+    """Perform regex validation on crypto tickers with cache."""
+    return isinstance(ticker, str) and 2 <= len(ticker) <= 10 and ticker.isalnum()
 
-    def get(self, key: str, default: Any = None) -> Any:
-        return self.data.get(key, default)
+class DataValidator:
+    @staticmethod
+    def sanitize_payload(data: dict) -> dict:
+        return {k: v for k, v in data.items() if v is not None}
 
-def load_crypto_config() -> ConfigLoader:
-    defaults = {
-        "api_key": "none",
-        "refresh_interval": 60,
-        "target_coins": ["BTC", "ETH", "SOL"],
-        "db_path": "crypto_data.db"
-    }
-    return ConfigLoader(defaults)
+    @classmethod
+    def batch_validate(cls, items: list[str]) -> list[bool]:
+        # Using list comprehension for speed optimization in bulk checks
+        return [validate_ticker_format(i) for i in items]
