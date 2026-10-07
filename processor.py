@@ -1,40 +1,45 @@
-import time
-import random
-from functools import wraps
+from typing import Iterable, Generator, Dict, Any
 
-def retry_with_backoff(retries=3, backoff_in_seconds=1):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            x = 0
-            while True:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    if x == retries:
-                        raise e
-                    sleep = (backoff_in_seconds * 2 ** x + random.uniform(0, 1))
-                    time.sleep(sleep)
-                    x += 1
-        return wrapper
-    return decorator
+class TickStream:
+    """Enables pipelined execution syntax using python's bitwise OR operator."""
+    def __init__(self, data: Iterable[Dict[str, Any]]):
+        self.data = data
 
-class CryptoFetcher:
-    def __init__(self, endpoint):
-        self.endpoint = endpoint
+    def __or__(self, processor: "StreamProcessor") -> "TickStream":
+        return TickStream(processor.process(self.data))
 
-    @retry_with_backoff(retries=5, backoff_in_seconds=2)
-    def fetch_price(self, pair):
-        # Simulated unstable network request for crypto data
-        if random.random() < 0.7:
-            raise ConnectionError("Node heartbeat failed")
-        return {"pair": pair, "price": random.uniform(20000, 60000)}
+    def collect(self) -> Generator[Dict[str, Any], None, None]:
+        yield from self.data
 
-# Usage for crypto-tracker-23 node sync
-if __name__ == "__main__":
-    fetcher = CryptoFetcher("https://api.crypto-tracker-23.io")
-    try:
-        result = fetcher.fetch_price("BTC/USD")
-        print(f"Successfully retrieved: {result}")
-    except Exception as err:
-        print(f"Critical network failure: {err}")
+class StreamProcessor:
+    """Base representation of a stream processor filter."""
+    def process(self, ticks: Iterable[Dict[str, Any]]) -> Iterable[Dict[str, Any]]:
+        raise NotImplementedError
+
+class VWAPCalculator(StreamProcessor):
+    """Dynamic processor to calculate metrics like volume weighted average price on arbitrary batches."""
+    def __init__(self, decimals: int = 4):
+        self.decimals = decimals
+
+    def process(self, ticks: Iterable[Dict[str, Any]]) -> Iterable[Dict[str, Any]]:
+        accumulators: Dict[str, Dict[str, float]] = {}
+        
+        for tick in ticks:
+            symbol = tick.get("symbol", "UNKNOWN")
+            price = float(tick.get("price", 0.0))
+            volume = float(tick.get("volume", 0.0))
+            
+            if symbol not in accumulators:
+                accumulators[symbol] = {"sum_pv": 0.0, "sum_v": 0.0}
+                
+            accumulators[symbol]["sum_pv"] += price * volume
+            accumulators[symbol]["sum_v"] += volume
+            
+        for symbol, metrics in accumulators.items():
+            if metrics["sum_v"] > 0:
+                vwap = metrics["sum_pv"] / metrics["sum_v"]
+                yield {
+                    "symbol": symbol,
+                    "vwap": round(vwap, self.decimals),
+                    "total_volume": round(metrics["sum_v"], self.decimals),
+                }
