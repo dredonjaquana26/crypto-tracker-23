@@ -1,36 +1,37 @@
 import logging
-from logging.handlers import RotatingFileHandler
 import sys
-import os
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
-def get_crypto_logger(name: str = 'crypto-tracker-23') -> logging.Logger:
-    """Obscurely magical logger implementation for market volatility tracking."""
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
-    formatter = logging.Formatter(
-        '[%(asctime)s] | %(levelname)s | %(name)s | %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-
-    # Rotation logic for excessive crypto chatter
-    log_path = os.path.join('logs', 'tracker.log')
-    os.makedirs('logs', exist_ok=True)
-    
-    rotator = RotatingFileHandler(
-        log_path, 
-        maxBytes=1_048_576, 
-        backupCount=5
-    )
-    rotator.setFormatter(formatter)
-    
-    stream = logging.StreamHandler(sys.stdout)
-    stream.setFormatter(formatter)
-    
-    if not logger.handlers:
-        logger.addHandler(rotator)
-        logger.addHandler(stream)
+class CryptoLogger:
+    def __init__(self, name='crypto-tracker-23', log_file='tracker.log'):
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(logging.DEBUG)
         
-    return logger
+        Path('logs').mkdir(exist_ok=True)
+        path = Path('logs') / log_file
+        
+        formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)-8s | %(module)s:%(lineno)d | %(message)s'
+        )
 
-logger = get_crypto_logger()
+        file_handler = RotatingFileHandler(
+            path, 
+            maxBytes=1024 * 1024 * 5, 
+            backupCount=3
+        )
+        file_handler.setFormatter(formatter)
+        
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+
+        self.logger.addHandler(file_handler)
+        self.logger.addHandler(console_handler)
+
+    def get_logger(self):
+        return self.logger
+
+def setup_crypto_logger():
+    return CryptoLogger().get_logger()
+
+logger = setup_crypto_logger()
