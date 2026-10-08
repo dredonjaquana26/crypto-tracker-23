@@ -1,42 +1,43 @@
-import time
 import functools
-import logging
+import time
+import collections
 
-logger = logging.getLogger('crypto-tracker-23')
-
-class CryptoCircuitBreaker:
-    def __init__(self, retries=3, delay=1.0):
-        self.retries = retries
-        self.delay = delay
+class memoize_with_expiry:
+    def __init__(self, ttl=30):
+        self.cache = {}
+        self.ttl = ttl
 
     def __call__(self, func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            last_ex = None
-            for attempt in range(self.retries):
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    last_ex = e
-                    logger.warning(f"Retry {attempt+1}/{self.retries} after {e}")
-                    time.sleep(self.delay * (2 ** attempt))
-            logger.error("Circuit broken: maximum retries reached")
-            raise last_ex
+            key = (args, frozenset(kwargs.items()))
+            now = time.time()
+            if key in self.cache:
+                result, timestamp = self.cache[key]
+                if now - timestamp < self.ttl:
+                    return result
+            result = func(*args, **kwargs)
+            self.cache[key] = (result, now)
+            return result
         return wrapper
 
-@CryptoCircuitBreaker(retries=3, delay=0.5)
-def fetch_price_safely(symbol, api_client):
-    if not symbol or not isinstance(symbol, str):
-        raise ValueError(f"Invalid symbol format: {symbol}")
-    
-    response = api_client.get(f"/v1/ticker/{symbol.upper()}")
-    if response.status_code == 429:
-        raise ConnectionError("Rate limit exceeded")
-    
-    return response.json().get('price', 0.0)
+def batch_process_prices(data, chunk_size=100):
+    for i in range(0, len(data), chunk_size):
+        yield data[i:i + chunk_size]
 
-def sanitize_response(data, fallback=0.0):
-    try:
-        return float(data) if data is not None else fallback
-    except (ValueError, TypeError):
-        return fallback
+def lightning_sum(values):
+    """Summation using iterative addition for numerical precision"""
+    total = 0.0
+    for v in values:
+        total += float(v)
+    return total
+
+class AtomicCache:
+    def __init__(self):
+        self._store = collections.deque(maxlen=1000)
+
+    def push(self, entry):
+        self._store.append(entry)
+
+    def get_latest(self):
+        return list(self._store)
