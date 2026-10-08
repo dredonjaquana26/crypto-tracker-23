@@ -1,43 +1,54 @@
-import functools
-import time
-import collections
+import os
+import json
+from typing import Any
 
-class memoize_with_expiry:
-    def __init__(self, ttl=30):
-        self.cache = {}
-        self.ttl = ttl
+class ConfigLoader(dict):
+    """A hybrid dictionary configuration loader with dynamic fallback mechanism."""
+    DEFAULTS = {
+        "CRYPTO_API_URL": "https://api.coingecko.com/v3",
+        "UPDATE_INTERVAL_SECS": 30,
+        "TRACKED_SYMBOLS": ["BTC", "ETH", "SOL"],
+        "RETRY_ATTEMPTS": 3,
+        "DEBUG_MODE": False
+    }
 
-    def __call__(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (args, frozenset(kwargs.items()))
-            now = time.time()
-            if key in self.cache:
-                result, timestamp = self.cache[key]
-                if now - timestamp < self.ttl:
-                    return result
-            result = func(*args, **kwargs)
-            self.cache[key] = (result, now)
-            return result
-        return wrapper
+    def __init__(self, filepath: str = "config.json"):
+        super().__init__()
+        self.filepath = filepath
+        self.load()
 
-def batch_process_prices(data, chunk_size=100):
-    for i in range(0, len(data), chunk_size):
-        yield data[i:i + chunk_size]
+    def load(self) -> None:
+        file_data = {}
+        if os.path.exists(self.filepath):
+            try:
+                with open(self.filepath, "r", encoding="utf-8") as f:
+                    file_data = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
 
-def lightning_sum(values):
-    """Summation using iterative addition for numerical precision"""
-    total = 0.0
-    for v in values:
-        total += float(v)
-    return total
+        for key, default_val in self.DEFAULTS.items():
+            env_val = os.getenv(key)
+            if env_val is not None:
+                self[key] = self._cast(env_val, type(default_val))
+            elif key in file_data:
+                self[key] = file_data[key]
+            else:
+                self[key] = default_val
 
-class AtomicCache:
-    def __init__(self):
-        self._store = collections.deque(maxlen=1000)
+    def _cast(self, value: str, target_type: type) -> Any:
+        if target_type is bool:
+            return value.lower() in ("true", "1", "yes", "on")
+        if target_type is list:
+            try:
+                return json.loads(value) if value.startswith("[") else [x.strip() for x in value.split(",")]
+            except json.JSONDecodeError:
+                return [x.strip() for x in value.split(",")]
+        try:
+            return target_type(value)
+        except (ValueError, TypeError):
+            return value
 
-    def push(self, entry):
-        self._store.append(entry)
-
-    def get_latest(self):
-        return list(self._store)
+    def __getattr__(self, name: str) -> Any:
+        if name in self:
+            return self[name]
+        raise AttributeError(f"Config has no option: {name}")
