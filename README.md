@@ -1,13 +1,13 @@
 # crypto-tracker-23
 
-`crypto-tracker-23` is a lightweight Python command-line utility designed to monitor real-time cryptocurrency price fluctuations and historical trends. It leverages the CoinGecko API to provide accurate, up-to-the-second market data directly to your terminal.
+A high-performance Python CLI tool designed to track real-time cryptocurrency market data and portfolio performance. It leverages the CoinGecko API to provide accurate price feeds and historical trend analysis directly in your terminal.
 
 ## Features
 
-*   **Live Price Streaming:** Fetch real-time market data for over 100+ top cryptocurrencies with configurable refresh intervals.
-*   **Portfolio Tracking:** Monitor your personal holdings by defining a local CSV file, allowing the tool to calculate your total portfolio value in USD.
-*   **Automated Alerts:** Set price thresholds for specific assets and receive desktop notifications when your targets are hit.
-*   **Data Export:** Save snapshot market reports to JSON or CSV formats for integration with external analysis tools.
+*   **Live Price Monitoring:** Fetches sub-second price updates for top 100 cryptocurrencies with customizable refresh intervals.
+*   **Portfolio Tracking:** Automatically calculates total holdings value by ingesting a local `assets.json` configuration file.
+*   **Historical Analysis:** Generates ASCII-based trend charts to visualize price volatility over the last 24 hours.
+*   **Alert System:** Configurable threshold notifications that trigger desktop alerts when a coin hits a specified buy or sell price.
 
 ## Installation
 
@@ -21,24 +21,26 @@ pip install -r requirements.txt
 
 ## Usage
 
-To view the live dashboard for Bitcoin, Ethereum, and Solana, run the following command:
+To view the current market dashboard, run the main entry point:
 
 ```bash
-python tracker.py --assets btc,eth,sol --interval 60
+python main.py --view market
 ```
 
-To monitor your custom portfolio defined in `my_portfolio.csv`:
+To track your custom portfolio defined in `assets.json`:
 
 ```bash
-python tracker.py --portfolio my_portfolio.csv --alert-threshold 0.05
+python main.py --track portfolio --file assets.json
 ```
 
-## Configuration
+For a full list of commands and available exchange markets, use the help flag:
 
-You can customize your experience by modifying the `config.ini` file located in the root directory. Update the `API_KEY` field if you are using a premium tier account, or adjust the default currency settings.
+```bash
+python main.py --help
+```
 
 ## License
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-Distributed under the MIT License. See `LICENSE` for more information.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
