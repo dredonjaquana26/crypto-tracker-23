@@ -1,32 +1,37 @@
 import logging
-import os
-from logging.handlers import RotatingFileHandler
+import functools
+import sys
 
-def get_crypto_logger(name='crypto-tracker-23', log_file='tracker.log'):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+class CryptoGuardian:
+    def __init__(self, name='crypto-tracker-23'):
+        self.logger = logging.getLogger(name)
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter('%(asctime)s - [%(levelname)s] - %(message)s'))
+        self.logger.addHandler(handler)
+        self.logger.setLevel(logging.INFO)
+
+def resilient_execution(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except ConnectionError as e:
+            logging.error(f"Network ripple detected in {func.__name__}: {e}")
+        except ValueError as e:
+            logging.warning(f"Data corruption anomaly in {func.__name__}: {e}")
+        except Exception as e:
+            logging.critical(f"Catastrophic blockchain state failure: {type(e).__name__}")
+            return None
+    return wrapper
+
+def log_market_event(event_type, details):
+    guard = CryptoGuardian()
+    if not isinstance(details, dict):
+        guard.logger.error("Invalid telemetry format received")
+        return
     
-    if not logger.handlers:
-        formatter = logging.Formatter(
-            '%(asctime)s | %(levelname)-8s | [TXN] %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        
-        # Custom rotation logic: 5MB files, keeps 3 backups
-        rotator = RotatingFileHandler(
-            log_file, 
-            maxBytes=5*1024*1024, 
-            backupCount=3
-        )
-        rotator.setFormatter(formatter)
-        logger.addHandler(rotator)
-        
-        # Add a console stream for real-time volatility tracking
-        stream = logging.StreamHandler()
-        stream.setFormatter(formatter)
-        logger.addHandler(stream)
-        
-    return logger
+    msg = f"EVENT:{event_type} | PAYLOAD:{str(details)[:50]}"
+    guard.logger.info(msg)
 
-# Instantiate for global use
-logger = get_crypto_logger()
+if __name__ == '__main__':
+    log_market_event('TICKER_FETCH', {'symbol': 'BTC', 'status': 'volatile'})
