@@ -1,37 +1,32 @@
 import logging
-import sys
+import os
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
-class CryptoLogger:
-    def __init__(self, name='crypto-tracker-23', log_file='tracker.log'):
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.DEBUG)
-        
-        Path('logs').mkdir(exist_ok=True)
-        path = Path('logs') / log_file
-        
+def get_crypto_logger(name='crypto-tracker-23', log_file='tracker.log'):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    
+    if not logger.handlers:
         formatter = logging.Formatter(
-            '%(asctime)s | %(levelname)-8s | %(module)s:%(lineno)d | %(message)s'
+            '%(asctime)s | %(levelname)-8s | [TXN] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
         )
-
-        file_handler = RotatingFileHandler(
-            path, 
-            maxBytes=1024 * 1024 * 5, 
+        
+        # Custom rotation logic: 5MB files, keeps 3 backups
+        rotator = RotatingFileHandler(
+            log_file, 
+            maxBytes=5*1024*1024, 
             backupCount=3
         )
-        file_handler.setFormatter(formatter)
+        rotator.setFormatter(formatter)
+        logger.addHandler(rotator)
         
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setFormatter(formatter)
+        # Add a console stream for real-time volatility tracking
+        stream = logging.StreamHandler()
+        stream.setFormatter(formatter)
+        logger.addHandler(stream)
+        
+    return logger
 
-        self.logger.addHandler(file_handler)
-        self.logger.addHandler(console_handler)
-
-    def get_logger(self):
-        return self.logger
-
-def setup_crypto_logger():
-    return CryptoLogger().get_logger()
-
-logger = setup_crypto_logger()
+# Instantiate for global use
+logger = get_crypto_logger()
