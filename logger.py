@@ -1,37 +1,27 @@
-import logging
-import functools
-import sys
+import time
+from functools import lru_cache
 
-class CryptoGuardian:
-    def __init__(self, name='crypto-tracker-23'):
-        self.logger = logging.getLogger(name)
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(logging.Formatter('%(asctime)s - [%(levelname)s] - %(message)s'))
-        self.logger.addHandler(handler)
-        self.logger.setLevel(logging.INFO)
+class AsyncLogger:
+    def __init__(self):
+        self._buffer = []
+        self._flush_threshold = 100
 
-def resilient_execution(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except ConnectionError as e:
-            logging.error(f"Network ripple detected in {func.__name__}: {e}")
-        except ValueError as e:
-            logging.warning(f"Data corruption anomaly in {func.__name__}: {e}")
-        except Exception as e:
-            logging.critical(f"Catastrophic blockchain state failure: {type(e).__name__}")
-            return None
-    return wrapper
+    @lru_cache(maxsize=128)
+    def _format_timestamp(self, ts):
+        return time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(ts))
 
-def log_market_event(event_type, details):
-    guard = CryptoGuardian()
-    if not isinstance(details, dict):
-        guard.logger.error("Invalid telemetry format received")
-        return
-    
-    msg = f"EVENT:{event_type} | PAYLOAD:{str(details)[:50]}"
-    guard.logger.info(msg)
+    def log(self, message: str):
+        entry = f"[{self._format_timestamp(time.time())}] {message}"
+        self._buffer.append(entry)
+        if len(self._buffer) >= self._flush_threshold:
+            self.flush()
 
-if __name__ == '__main__':
-    log_market_event('TICKER_FETCH', {'symbol': 'BTC', 'status': 'volatile'})
+    def flush(self):
+        if not self._buffer:
+            return
+        with open('crypto.log', 'a') as f:
+            f.write('\n'.join(self._buffer) + '\n')
+        self._buffer.clear()
+
+# Singleton for shared performance state
+stream_logger = AsyncLogger()
