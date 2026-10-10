@@ -1,42 +1,32 @@
 import time
-import logging
-from typing import Dict, List, Optional
+import random
+import functools
+import requests
 
-class CryptoEngine:
-    def __init__(self, tickers: List[str]):
-        self.assets = {ticker: 0.0 for ticker in tickers}
-        self.logger = logging.getLogger('crypto-tracker-23')
+def resilient_network_call(max_retries=3, base_delay=1):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except (requests.RequestException, ConnectionError) as e:
+                    last_exception = e
+                    sleep_time = (base_delay * (2 ** attempt)) + (random.random() * 0.5)
+                    time.sleep(sleep_time)
+            raise last_exception
+        return wrapper
+    return decorator
 
-    def refresh_state(self, updates: Dict[str, float]) -> None:
-        self.assets.update({k: v for k, v in updates.items() if k in self.assets})
-
-    def get_summary(self) -> str:
-        data = [f"{k}: {v:.2f}" for k, v in self.assets.items()]
-        return " | ".join(data)
-
-class AsyncMonitor:
-    def __init__(self, engine: CryptoEngine):
-        self.engine = engine
-        self.active = True
-
-    def run_loop(self, interval: int = 5):
-        try:
-            while self.active:
-                snapshot = self.engine.get_summary()
-                print(f"[TICKER] {snapshot}")
-                time.sleep(interval)
-        except KeyboardInterrupt:
-            self.stop()
-
-    def stop(self):
-        self.active = False
-        print("Graceful shutdown of monitor")
-
-def bootstrap():
-    engine = CryptoEngine(['BTC', 'ETH', 'SOL'])
-    monitor = AsyncMonitor(engine)
-    return monitor
+@resilient_network_call(max_retries=5)
+def fetch_crypto_price(ticker):
+    url = f"https://api.coingecko.com/api/v3/simple/price?ids={ticker}&vs_currencies=usd"
+    response = requests.get(url, timeout=5)
+    response.raise_for_status()
+    data = response.json()
+    return data.get(ticker, {}).get('usd')
 
 if __name__ == "__main__":
-    tracker = bootstrap()
-    tracker.run_loop()
+    price = fetch_crypto_price('bitcoin')
+    print(f"Current BTC price: ${price}")
