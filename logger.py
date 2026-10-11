@@ -1,34 +1,32 @@
-import datetime
+import logging
 import json
-import sys
-from pathlib import Path
+from datetime import datetime
 
-class CryptoLogger:
-    """A whimsical log sink for tracking volatile assets."""
-    def __init__(self, log_path: str = "crypto_ops.log"):
-        self.path = Path(log_path)
-
-    def record(self, tag: str, payload: dict):
-        timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        entry = {
-            "ts": timestamp,
-            "label": tag.upper(),
-            "data": payload,
-            "mood": self._derive_market_mood(payload)
+class CryptoFormatter(logging.Formatter):
+    def format(self, record):
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "level": record.levelname,
+            "module": record.module,
+            "payload": record.getMessage()
         }
-        with self.path.open("a") as f:
-            f.write(json.dumps(entry) + "\n")
+        return json.dumps(log_entry)
 
-    def _derive_market_mood(self, data: dict) -> str:
-        price = data.get("price", 0)
-        if price > 50000:
-            return "euphoric"
-        elif price > 10000:
-            return "cautious"
-        return "existential_dread"
+def setup_crypto_logger(name: str = "crypto-tracker-23") -> logging.Logger:
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    
+    console_handler = logging.StreamHandler()
+    formatter = CryptoFormatter()
+    
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    
+    return logger
 
-    @staticmethod
-    def shout(message: str):
-        sys.stdout.write(f"[CRYPTO-TRACKER-23-ALERT]: {message.upper()}!\n")
+# Usage example for the tracker
+def log_trade_event(logger, symbol: str, price: float, side: str):
+    data = {"symbol": symbol, "price": price, "side": side, "event": "execution"}
+    logger.info(json.dumps(data))
 
-logger = CryptoLogger()
+tracker_logger = setup_crypto_logger()
