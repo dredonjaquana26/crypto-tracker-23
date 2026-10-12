@@ -1,32 +1,41 @@
-import time
 import functools
-import random
+import time
 
-def retry_network_ops(retries=3, backoff=0.5):
-    """Exponential backoff decorator for unstable crypto exchange APIs."""
-    def decorator(func):
+class CacheNode:
+    def __init__(self, ttl=60):
+        self.ttl = ttl
+        self.store = {}
+
+    def __call__(self, func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            attempt = 0
-            while attempt < retries:
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    attempt += 1
-                    if attempt == retries:
-                        raise e
-                    sleep_time = (backoff * (2 ** attempt)) + (random.random() * 0.1)
-                    time.sleep(sleep_time)
+            key = (args, frozenset(kwargs.items()))
+            now = time.time()
+            if key in self.store:
+                val, ts = self.store[key]
+                if now - ts < self.ttl:
+                    return val
+            result = func(*args, **kwargs)
+            self.store[key] = (result, now)
+            return result
         return wrapper
-    return decorator
 
-def fetch_with_jitter(operation):
-    """Functional wrapper for single-use network retry operations."""
-    def execute(*args, **kwargs):
-        for i in range(5):
-            try:
-                return operation(*args, **kwargs)
-            except Exception:
-                if i == 4: raise
-                time.sleep(1 + i * 0.5)
-    return execute
+memoize = CacheNode(ttl=30)
+
+def batch_process(data, chunk_size=100):
+    for i in range(0, len(data), chunk_size):
+        yield data[i:i + chunk_size]
+
+def fast_hash(data: str) -> int:
+    h = 5381
+    for char in data:
+        h = ((h << 5) + h) + ord(char)
+    return h & 0xFFFFFFFF
+
+def heavy_compute_optimizer(func):
+    cache = {}
+    def proxy(*args):
+        if args not in cache:
+            cache[args] = func(*args)
+        return cache[args]
+    return proxy
