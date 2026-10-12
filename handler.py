@@ -1,33 +1,35 @@
-import functools
-import time
-from typing import Callable, Any
+import logging
 
-class CryptoCache:
-    _data = {}
-    _ttl = 5
+class CryptoInputSanitizer:
+    def __init__(self, allowed_symbols):
+        self.allowed = set(allowed_symbols)
 
-    @classmethod
-    def get_optimized_price(cls, symbol: str, fetch_func: Callable) -> float:
-        now = time.time()
-        if symbol in cls._data:
-            val, ts = cls._data[symbol]
-            if now - ts < cls._ttl:
-                return val
-        
-        price = fetch_func(symbol)
-        cls._data[symbol] = (price, now)
-        return price
+    def __call__(self, payload):
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be a dictionary")
+        symbol = payload.get("ticker", "").upper()
+        amount = payload.get("amount", 0)
+        if symbol not in self.allowed:
+            raise ValueError(f"unauthorized asset: {symbol}")
+        if not isinstance(amount, (int, float)) or amount <= 0:
+            raise ValueError(f"invalid trade volume: {amount}")
+        return {"ticker": symbol, "amount": float(amount)}
 
-def batch_process_prices(symbols: list, fetch_logic: Callable) -> dict:
-    """Vectorized-style mapping using dictionary comprehensions for speed."""
-    return {s: CryptoCache.get_optimized_price(s, fetch_logic) for s in set(symbols)}
+def process_market_data(stream, sanitizer):
+    for event in stream:
+        try:
+            validated_data = sanitizer(event)
+            print(f"processing trade: {validated_data['ticker']} @ {validated_data['amount']}")
+        except ValueError as e:
+            logging.warning(f"dropped malicious or malformed packet: {e}")
 
-class DataStreamHandler:
-    def __init__(self, fetcher: Callable):
-        self.fetcher = fetcher
-
-    def handle_request(self, payload: dict) -> dict:
-        items = payload.get("assets", [])
-        if not isinstance(items, list):
-            return {"error": "invalid format"}
-        return {"results": batch_process_prices(items, self.fetcher)}
+if __name__ == '__main__':
+    assets = ['BTC', 'ETH', 'SOL']
+    validator = CryptoInputSanitizer(assets)
+    mock_stream = [
+        {"ticker": "BTC", "amount": 0.5},
+        {"ticker": "DOGE", "amount": 100},
+        {"ticker": "ETH", "amount": -1},
+        {"ticker": "SOL", "amount": 10.2}
+    ]
+    process_market_data(mock_stream, validator)
