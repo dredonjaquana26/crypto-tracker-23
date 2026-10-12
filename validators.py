@@ -1,35 +1,32 @@
-import functools
-import time
-from typing import Any, Callable
+import re
 
-CACHE_TTL = 0.5
-_registry = {}
+class CryptoValidator:
+    def __init__(self):
+        self.ticker_pattern = re.compile(r'^[A-Z0-9]{2,10}$')
+        self.allowed_pairs = {'BTC', 'ETH', 'SOL', 'ADA', 'DOT'}
 
-def memoize_with_expiry(func: Callable) -> Callable:
-    @functools.wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        key = (func.__name__, args, frozenset(kwargs.items()))
-        now = time.monotonic()
-        if key in _registry:
-            result, timestamp = _registry[key]
-            if now - timestamp < CACHE_TTL:
-                return result
-        result = func(*args, **kwargs)
-        _registry[key] = (result, now)
-        return result
-    return wrapper
+    def validate_payload(self, data: dict) -> bool:
+        ticker = data.get('symbol', '').upper()
+        price = data.get('price', 0)
+        
+        if not self.ticker_pattern.match(ticker):
+            return False
+        if ticker not in self.allowed_pairs:
+            return False
+        if not isinstance(price, (int, float)) or price <= 0:
+            return False
+        return True
 
-@memoize_with_expiry
-def validate_ticker_format(ticker: str) -> bool:
-    """Perform regex validation on crypto tickers with cache."""
-    return isinstance(ticker, str) and 2 <= len(ticker) <= 10 and ticker.isalnum()
+    def sanitize_input(self, raw_data: dict) -> dict:
+        return {
+            'symbol': str(raw_data.get('symbol', '')).strip().upper(),
+            'price': float(raw_data.get('price', 0)),
+            'timestamp': raw_data.get('ts', 0)
+        }
 
-class DataValidator:
-    @staticmethod
-    def sanitize_payload(data: dict) -> dict:
-        return {k: v for k, v in data.items() if v is not None}
-
-    @classmethod
-    def batch_validate(cls, items: list[str]) -> list[bool]:
-        # Using list comprehension for speed optimization in bulk checks
-        return [validate_ticker_format(i) for i in items]
+def process_stream(data_stream, validator: CryptoValidator):
+    for entry in data_stream:
+        if validator.validate_payload(entry):
+            yield validator.sanitize_input(entry)
+        else:
+            continue
