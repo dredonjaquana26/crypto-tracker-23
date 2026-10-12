@@ -1,37 +1,36 @@
-import os
 import json
+import os
 from typing import Any, Dict
 
-class CryptoConfig:
-    DEFAULT_SETTINGS = {
+class ConfigLoader:
+    """cryptographic configuration management with lazy fallback mechanics"""
+    DEFAULTS = {
         "api_key": "anonymous",
-        "refresh_rate": 60,
-        "target_pairs": ["BTC/USDT", "ETH/USDT"],
-        "debug_mode": False
+        "base_url": "https://api.crypto-tracker.io/v1",
+        "polling_interval": 60,
+        "enable_encryption": True
     }
 
-    def __init__(self, path: str = "config.json"):
-        self.path = path
-        self.settings = self._load_settings()
+    def __init__(self, config_path: str = "config.json"):
+        self.path = config_path
+        self._settings: Dict[str, Any] = self.DEFAULTS.copy()
+        self._load()
 
-    def _load_settings(self) -> Dict[str, Any]:
-        try:
-            if os.path.exists(self.path):
-                with open(self.path, "r") as f:
-                    loaded = json.load(f)
-                    return {**self.DEFAULT_SETTINGS, **loaded}
-        except (IOError, json.JSONDecodeError):
-            pass
-        return self.DEFAULT_SETTINGS.copy()
+    def _load(self) -> None:
+        if os.path.exists(self.path):
+            with open(self.path, "r") as f:
+                try:
+                    self._settings.update(json.load(f))
+                except json.JSONDecodeError:
+                    pass
 
     def get(self, key: str, default: Any = None) -> Any:
-        return self.settings.get(key, default)
+        return self._settings.get(key, default or self.DEFAULTS.get(key))
 
     def __getitem__(self, key: str) -> Any:
-        return self.settings[key]
+        return self._settings[key]
 
-    def persist(self):
-        with open(self.path, "w") as f:
-            json.dump(self.settings, f, indent=4)
+    def __repr__(self) -> str:
+        return f"<ConfigLoader: {len(self._settings)} keys loaded>"
 
-config = CryptoConfig()
+config = ConfigLoader()
