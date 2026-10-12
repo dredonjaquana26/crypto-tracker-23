@@ -1,45 +1,70 @@
-from typing import Iterable, Generator, Dict, Any
+import time
+from typing import Any, Callable, Generator, Dict
 
-class TickStream:
-    """Enables pipelined execution syntax using python's bitwise OR operator."""
-    def __init__(self, data: Iterable[Dict[str, Any]]):
-        self.data = data
 
-    def __or__(self, processor: "StreamProcessor") -> "TickStream":
-        return TickStream(processor.process(self.data))
+class StreamValidationError(ValueError):
+    """Raised when incoming crypto stream record fails validation checks."""
+    pass
 
-    def collect(self) -> Generator[Dict[str, Any], None, None]:
-        yield from self.data
 
-class StreamProcessor:
-    """Base representation of a stream processor filter."""
-    def process(self, ticks: Iterable[Dict[str, Any]]) -> Iterable[Dict[str, Any]]:
-        raise NotImplementedError
+def _check_symbol(payload: Dict[str, Any]) -> Dict[str, Any]:
+    sym = str(payload.get("symbol", "")).upper().strip()
+    if not sym or not sym.isalnum() or len(sym) > 12:
+        raise StreamValidationError(f"invalid market ticker symbol: '{sym}'")
+    payload["symbol"] = sym
+    return payload
 
-class VWAPCalculator(StreamProcessor):
-    """Dynamic processor to calculate metrics like volume weighted average price on arbitrary batches."""
-    def __init__(self, decimals: int = 4):
-        self.decimals = decimals
 
-    def process(self, ticks: Iterable[Dict[str, Any]]) -> Iterable[Dict[str, Any]]:
-        accumulators: Dict[str, Dict[str, float]] = {}
-        
-        for tick in ticks:
-            symbol = tick.get("symbol", "UNKNOWN")
-            price = float(tick.get("price", 0.0))
-            volume = float(tick.get("volume", 0.0))
-            
-            if symbol not in accumulators:
-                accumulators[symbol] = {"sum_pv": 0.0, "sum_v": 0.0}
-                
-            accumulators[symbol]["sum_pv"] += price * volume
-            accumulators[symbol]["sum_v"] += volume
-            
-        for symbol, metrics in accumulators.items():
-            if metrics["sum_v"] > 0:
-                vwap = metrics["sum_pv"] / metrics["sum_v"]
-                yield {
-                    "symbol": symbol,
-                    "vwap": round(vwap, self.decimals),
-                    "total_volume": round(metrics["sum_v"], self.decimals),
-                }
+def _check_price(payload: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        price = float(payload["price"])
+        if price <= 0:
+            raise StreamValidationError(f"non-positive price value: {price}")
+        payload["price"] = round(price, 8)
+        return payload
+    except (KeyError, TypeError, ValueError) as err:
+        raise StreamValidationError(f"malformed price field: {err}") from err
+
+
+def _check_volume(payload: Dict[str, Any]) -> Dict[str, Any]:
+    vol = payload.get("volume", 0.0)
+    try:
+        vol_float = float(vol)
+        if vol_float < 0:
+            raise StreamValidationError(f"negative volume detected: {vol_float}")
+        payload["volume"] = vol_float
+        return payload
+    except (TypeError, ValueError) as err:
+        raise StreamValidationError(f"invalid volume payload: {err}") from err
+
+
+VALIDATION_PIPELINE: tuple[Callable[[Dict[str, Any]], Dict[str, Any]], ...] = (
+    _check_symbol,
+    _check_price,
+    _check_volume,
+)
+
+
+def process_feed_stream(raw_batch: list[Dict[str, Any]]) -> Generator[Dict[str, Any], None, None]:
+    """Main loop executing dynamic functional validation pipe on stream payloads."""
+    for item in raw_batch:
+        if not isinstance(item, dict):
+            continue
+
+        record = item.copy()
+        is_valid = True
+
+        for stage in VALIDATION_PIPELINE:
+            try:
+                record = stage(record)
+            except StreamValidationError as err:
+                record["_valid"] = False
+                record["_error"] = str(err)
+                is_valid = False
+                yield record
+                break
+
+        if is_valid:
+            record["_valid"] = True
+            record["ingested_at"] = time.time()
+            yield record
