@@ -1,27 +1,43 @@
 import time
-import functools
-import random
-from typing import Callable, Any
+from decimal import Decimal
+from functools import wraps
 
-def resilient_fetch(max_attempts: int = 3, base_delay: float = 1.0):
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
+def price_to_decimal(val):
+    try:
+        return Decimal(str(val))
+    except (ValueError, TypeError):
+        return Decimal('0.0')
+
+def retry_on_failure(retries=3, delay=1):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
             last_ex = None
-            for attempt in range(max_attempts):
+            for i in range(retries):
                 try:
                     return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
+                except Exception as e:
                     last_ex = e
-                    sleep_time = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
-                    time.sleep(sleep_time)
+                    time.sleep(delay * (2 ** i))
             raise last_ex
         return wrapper
     return decorator
 
-@resilient_fetch(max_attempts=5)
-def get_crypto_price(ticker: str) -> float:
-    # Simulated network jitter or instability for crypto-tracker-23
-    if random.random() < 0.7:
-        raise ConnectionError(f"Failed to reach market node for {ticker}")
-    return 50000.0 + random.uniform(-100, 100)
+class CryptoTicker:
+    def __init__(self, symbol, base_val='0'):
+        self.symbol = symbol
+        self.balance = price_to_decimal(base_val)
+
+    def update_balance(self, amount):
+        self.balance += price_to_decimal(amount)
+        return self.balance
+
+    def format_view(self):
+        return f"[{self.symbol.upper()}]: {self.balance:,.8f}"
+
+def sanitize_pair(pair):
+    return pair.upper().replace('-', '/').strip()
+
+if __name__ == '__main__':
+    tracker = CryptoTicker('BTC', '0.005')
+    print(tracker.format_view())
