@@ -1,41 +1,37 @@
+import logging
 import functools
 import time
+from typing import Callable, Any
 
-class CacheNode:
-    def __init__(self, ttl=60):
-        self.ttl = ttl
-        self.store = {}
+class CryptoCircuitBreaker:
+    def __init__(self, retries: int = 3, delay: float = 1.0):
+        self.retries = retries
+        self.delay = delay
 
-    def __call__(self, func):
+    def __call__(self, func: Callable) -> Callable:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (args, frozenset(kwargs.items()))
-            now = time.time()
-            if key in self.store:
-                val, ts = self.store[key]
-                if now - ts < self.ttl:
-                    return val
-            result = func(*args, **kwargs)
-            self.store[key] = (result, now)
-            return result
+        def wrapper(*args, **kwargs) -> Any:
+            last_ex = None
+            for attempt in range(self.retries):
+                try:
+                    return func(*args, **kwargs)
+                except (ConnectionError, TimeoutError) as e:
+                    last_ex = e
+                    logging.warning(f'attempt {attempt + 1} failed: {e}')
+                    time.sleep(self.delay * (2 ** attempt))
+                except Exception as e:
+                    logging.error(f'fatal non-recoverable error: {e}')
+                    raise
+            raise last_ex or RuntimeError('unknown crypto processing failure')
         return wrapper
 
-memoize = CacheNode(ttl=30)
-
-def batch_process(data, chunk_size=100):
-    for i in range(0, len(data), chunk_size):
-        yield data[i:i + chunk_size]
-
-def fast_hash(data: str) -> int:
-    h = 5381
-    for char in data:
-        h = ((h << 5) + h) + ord(char)
-    return h & 0xFFFFFFFF
-
-def heavy_compute_optimizer(func):
-    cache = {}
-    def proxy(*args):
-        if args not in cache:
-            cache[args] = func(*args)
-        return cache[args]
-    return proxy
+def sanitize_price(val: Any) -> float:
+    try:
+        clean = str(val).replace(',', '').strip()
+        result = float(clean)
+        if result < 0:
+            raise ValueError('negative price is physically impossible')
+        return result
+    except (ValueError, TypeError, AttributeError):
+        logging.error(f'malformed price data: {val}')
+        return 0.0
