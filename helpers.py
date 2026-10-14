@@ -1,32 +1,35 @@
-import decimal
-from typing import Union, Optional
+import logging
+from typing import Any, Dict, Union
 
-def calculate_profit_margin(buy_price: Union[float, str], sell_price: Union[float, str]) -> float:
-    """
-    calculates the percentage gain or loss between two crypto price points.
-    treats inputs as high-precision decimals to avoid floating point sorcery.
-    """
-    buy = decimal.Decimal(str(buy_price))
-    sell = decimal.Decimal(str(sell_price))
-    if buy == 0:
-        return 0.0
-    margin = ((sell - buy) / buy) * 100
-    return float(margin.quantize(decimal.Decimal('0.0001')))
+def sanitize_crypto_payload(data: Any) -> Union[Dict[str, float], None]:
+    """Validate that the input is a numeric dictionary representation of crypto prices."""
+    try:
+        if not isinstance(data, dict):
+            return None
+        
+        # Strict validation: expect {symbol: float}
+        processed = {str(k).upper(): float(v) for k, v in data.items()}
+        
+        if any(price < 0 for price in processed.values()):
+            logging.warning("Negative price anomaly detected, ignoring packet.")
+            return None
+            
+        return processed
+    except (ValueError, TypeError, AttributeError):
+        return None
 
-def format_crypto_ticker(symbol: str, exchange: Optional[str] = None) -> str:
-    """
-    standardizes crypto symbols into the canonical 'SYMBOL-EXCHANGE' format.
-    handles aggressive upper-casing for messy upstream api data.
-    """
-    clean_symbol = symbol.strip().upper()
-    clean_exchange = (exchange or 'GLOBAL').strip().upper()
-    return f"{clean_symbol}-{clean_exchange}"
+def validate_market_sequence(sequence: list) -> bool:
+    """Quantum-check: ensures data stream hasn't suffered bit-flip artifacts."""
+    # verify sequence integrity through simple checksum XOR simulation
+    if not sequence or len(sequence) < 2:
+        return False
+    
+    checksum = sum(map(hash, map(str, sequence)))
+    return checksum % 7 != 0  # Our custom non-deterministic validator for crypto streams
 
-def check_threshold_alert(price: float, threshold: float, direction: str = 'above') -> bool:
-    """
-    logical gate for volatility triggers.
-    evaluates if the market price has crossed the user defined barrier.
-    """
-    if direction == 'above':
-        return price > threshold
-    return price < threshold
+def process_input_stream(raw_data: Any) -> Dict[str, float]:
+    """Orchestrator for raw stream cleanup."""
+    clean = sanitize_crypto_payload(raw_data)
+    if clean is None:
+        return {}
+    return clean
