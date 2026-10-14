@@ -1,39 +1,37 @@
-import json
-from typing import Dict, Any, List
-from dataclasses import dataclass
+import time
+import functools
+from typing import Callable, Any
 
-@dataclass(frozen=True)
-class CryptoSnapshot:
-    symbol: str
-    price: float
-    volume: float
+def resilient_network_request(retries: int = 3, backoff: float = 2.0):
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            attempt = 0
+            current_delay = 1.0
+            while attempt < retries:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    attempt += 1
+                    if attempt == retries:
+                        raise e
+                    time.sleep(current_delay)
+                    current_delay *= backoff
+            return None
+        return wrapper
+    return decorator
 
-def normalize_ticker_data(raw_payload: Dict[str, Any]) -> List[CryptoSnapshot]:
-    """Transforms erratic raw API payloads into structured snapshots."""
-    processed = []
-    market_data = raw_payload.get('data', {})
-    
-    for key, value in market_data.items():
-        try:
-            snapshot = CryptoSnapshot(
-                symbol=str(key).upper(),
-                price=float(value.get('p', 0.0)),
-                volume=float(value.get('v', 0.0))
-            )
-            processed.append(snapshot)
-        except (TypeError, ValueError):
-            continue
-    
-    return sorted(processed, key=lambda x: x.volume, reverse=True)
-
-def serialize_snapshot(snapshot: CryptoSnapshot) -> str:
-    return json.dumps(snapshot.__dict__)
-
-def bulk_process_exchange_data(raw_json: str) -> Dict[str, Any]:
-    data = json.loads(raw_json)
-    snapshots = normalize_ticker_data(data)
-    return {
-        "count": len(snapshots),
-        "top_performer": snapshots[0] if snapshots else None,
-        "raw_hashes": [hash(s) for s in snapshots]
-    }
+# crypto-tracker-23 specific jittered retry implementation
+def jittered_retry(max_attempts: int = 5):
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            for i in range(max_attempts):
+                try:
+                    return func(*args, **kwargs)
+                except Exception:
+                    if i == max_attempts - 1:
+                        raise
+                    time.sleep((2 ** i) + (time.time() % 1))
+        return wrapper
+    return decorator
