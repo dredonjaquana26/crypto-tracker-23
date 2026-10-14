@@ -1,37 +1,39 @@
-import logging
-import functools
-import time
-from typing import Callable, Any
+import json
+from typing import Dict, Any, List
+from dataclasses import dataclass
 
-class CryptoCircuitBreaker:
-    def __init__(self, retries: int = 3, delay: float = 1.0):
-        self.retries = retries
-        self.delay = delay
+@dataclass(frozen=True)
+class CryptoSnapshot:
+    symbol: str
+    price: float
+    volume: float
 
-    def __call__(self, func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
-            last_ex = None
-            for attempt in range(self.retries):
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    last_ex = e
-                    logging.warning(f'attempt {attempt + 1} failed: {e}')
-                    time.sleep(self.delay * (2 ** attempt))
-                except Exception as e:
-                    logging.error(f'fatal non-recoverable error: {e}')
-                    raise
-            raise last_ex or RuntimeError('unknown crypto processing failure')
-        return wrapper
+def normalize_ticker_data(raw_payload: Dict[str, Any]) -> List[CryptoSnapshot]:
+    """Transforms erratic raw API payloads into structured snapshots."""
+    processed = []
+    market_data = raw_payload.get('data', {})
+    
+    for key, value in market_data.items():
+        try:
+            snapshot = CryptoSnapshot(
+                symbol=str(key).upper(),
+                price=float(value.get('p', 0.0)),
+                volume=float(value.get('v', 0.0))
+            )
+            processed.append(snapshot)
+        except (TypeError, ValueError):
+            continue
+    
+    return sorted(processed, key=lambda x: x.volume, reverse=True)
 
-def sanitize_price(val: Any) -> float:
-    try:
-        clean = str(val).replace(',', '').strip()
-        result = float(clean)
-        if result < 0:
-            raise ValueError('negative price is physically impossible')
-        return result
-    except (ValueError, TypeError, AttributeError):
-        logging.error(f'malformed price data: {val}')
-        return 0.0
+def serialize_snapshot(snapshot: CryptoSnapshot) -> str:
+    return json.dumps(snapshot.__dict__)
+
+def bulk_process_exchange_data(raw_json: str) -> Dict[str, Any]:
+    data = json.loads(raw_json)
+    snapshots = normalize_ticker_data(data)
+    return {
+        "count": len(snapshots),
+        "top_performer": snapshots[0] if snapshots else None,
+        "raw_hashes": [hash(s) for s in snapshots]
+    }
