@@ -1,35 +1,33 @@
 import time
 from functools import wraps
-from typing import Any, Callable, Dict
+from decimal import Decimal
 
-def normalize_crypto_data(data: Dict[str, Any]) -> Dict[str, float]:
-    return {
-        k.lower().strip(): float(v) 
-        for k, v in data.items() 
-        if isinstance(v, (int, float, str))
-    }
-
-def retry_with_backoff(retries: int = 3, delay: float = 1.0):
-    def decorator(func: Callable):
+def rate_limited(calls, period):
+    def decorator(func):
+        history = []
         @wraps(func)
         def wrapper(*args, **kwargs):
-            last_ex = None
-            for i in range(retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_ex = e
-                    time.sleep(delay * (2 ** i))
-            raise last_ex
+            now = time.time()
+            history[:] = [t for t in history if now - t < period]
+            if len(history) >= calls:
+                time.sleep(period - (now - history[0]))
+            history.append(time.time())
+            return func(*args, **kwargs)
         return wrapper
     return decorator
 
-def format_currency(value: float, symbol: str = '$') -> str:
-    return f"{symbol}{value:,.2f}"
+def to_wei(amount: float) -> int:
+    return int(Decimal(str(amount)) * Decimal('10')**18)
 
-class DataStreamFilter:
-    def __init__(self, threshold: float):
-        self.threshold = threshold
+def format_crypto(value: float, precision: int = 8) -> str:
+    return f"{value:.{precision}f}".rstrip('0').rstrip('.')
 
-    def __call__(self, entry: Dict[str, float]) -> bool:
-        return entry.get('price', 0) > self.threshold
+class CryptoEncoder:
+    @staticmethod
+    def serialize_dict(data: dict):
+        return {k: str(v) if isinstance(v, Decimal) else v for k, v in data.items()}
+
+def calculate_roi(initial: float, final: float) -> float:
+    if initial == 0:
+        return 0.0
+    return ((final - initial) / initial) * 100
