@@ -1,32 +1,35 @@
-import logging
-from typing import Dict, Any, Callable
+import functools
+import time
 
-class CryptoHandler:
-    def __init__(self):
-        self._registry: Dict[str, Callable] = {}
-        self.logger = logging.getLogger('crypto-tracker-23')
+class DataCache:
+    def __init__(self, ttl=60):
+        self._storage = {}
+        self._ttl = ttl
 
-    def register_hook(self, event: str, callback: Callable):
-        self._registry[event] = callback
+    def __call__(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            key = (func.__name__, args, frozenset(kwargs.items()))
+            now = time.monotonic()
+            if key in self._storage:
+                val, ts = self._storage[key]
+                if now - ts < self._ttl:
+                    return val
+            result = func(*args, **kwargs)
+            self._storage[key] = (result, now)
+            return result
+        return wrapper
 
-    def execute(self, event: str, payload: Any):
-        action = self._registry.get(event)
-        if action:
-            try:
-                return action(payload)
-            except Exception as e:
-                self.logger.error(f'event {event} failed: {e}')
-                return None
-        return None
+cache_engine = DataCache(ttl=30)
 
-class DataPipeline(CryptoHandler):
-    def process_batch(self, data: list):
-        return [self.execute('transform', item) for item in data if item]
+@cache_engine
+def fetch_market_price(symbol: str) -> float:
+    # Simulate high latency API call
+    time.sleep(0.5)
+    prices = {'BTC': 65000.0, 'ETH': 3500.0, 'SOL': 145.0}
+    return prices.get(symbol.upper(), 0.0)
 
-    def sanitize_ticker(self, ticker: str) -> str:
-        return str(ticker).strip().upper().replace('/', '_')
-
-if __name__ == '__main__':
-    pipeline = DataPipeline()
-    pipeline.register_hook('transform', lambda x: x.upper())
-    print(pipeline.process_batch(['btc/usd', 'eth/btc']))
+def process_request(data: dict):
+    symbol = data.get('symbol', 'BTC')
+    price = fetch_market_price(symbol)
+    return {'symbol': symbol, 'price': price, 'status': 'optimized'}
