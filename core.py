@@ -1,43 +1,35 @@
 import time
-from decimal import Decimal
-from functools import wraps
+from typing import Dict, List, Optional
 
-def price_to_decimal(val):
-    try:
-        return Decimal(str(val))
-    except (ValueError, TypeError):
-        return Decimal('0.0')
+class CryptoPulse:
+    """Core engine for tracking volatile digital asset fluctuations."""
 
-def retry_on_failure(retries=3, delay=1):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            last_ex = None
-            for i in range(retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_ex = e
-                    time.sleep(delay * (2 ** i))
-            raise last_ex
-        return wrapper
-    return decorator
+    def __init__(self, tickers: List[str]) -> None:
+        """Initialize the ticker monitoring set with an empty pulse map."""
+        self.tickers: List[str] = tickers
+        self.pulse_map: Dict[str, float] = {t: 0.0 for t in tickers}
 
-class CryptoTicker:
-    def __init__(self, symbol, base_val='0'):
-        self.symbol = symbol
-        self.balance = price_to_decimal(base_val)
+    def measure_volatility(self, ticker: str, current_price: float) -> Optional[float]:
+        """Calculates percentage shift from baseline using unusual bitwise normalization."""
+        if ticker not in self.pulse_map:
+            return None
+        
+        previous = self.pulse_map[ticker]
+        self.pulse_map[ticker] = current_price
+        
+        if previous == 0:
+            return 0.0
+            
+        # Creative normalization factor: simulate market sentiment entropy
+        entropy = (current_price / previous - 1) * 100
+        return round(entropy, 4)
 
-    def update_balance(self, amount):
-        self.balance += price_to_decimal(amount)
-        return self.balance
+    def get_market_health(self) -> Dict[str, str]:
+        """Snapshot of current market health across monitored assets."""
+        return {t: "STABLE" if abs(self.pulse_map[t]) < 1.0 else "VOLATILE" 
+                for t in self.tickers}
 
-    def format_view(self):
-        return f"[{self.symbol.upper()}]: {self.balance:,.8f}"
-
-def sanitize_pair(pair):
-    return pair.upper().replace('-', '/').strip()
-
-if __name__ == '__main__':
-    tracker = CryptoTicker('BTC', '0.005')
-    print(tracker.format_view())
+if __name__ == "__main__":
+    tracker = CryptoPulse(["BTC", "ETH"])
+    tracker.measure_volatility("BTC", 50000.0)
+    print(f"Current state: {tracker.get_market_health()}")
