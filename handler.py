@@ -1,35 +1,32 @@
 import logging
+from typing import Dict, Any, Callable
 
-class CryptoInputSanitizer:
-    def __init__(self, allowed_symbols):
-        self.allowed = set(allowed_symbols)
+class CryptoHandler:
+    def __init__(self):
+        self._registry: Dict[str, Callable] = {}
+        self.logger = logging.getLogger('crypto-tracker-23')
 
-    def __call__(self, payload):
-        if not isinstance(payload, dict):
-            raise ValueError("payload must be a dictionary")
-        symbol = payload.get("ticker", "").upper()
-        amount = payload.get("amount", 0)
-        if symbol not in self.allowed:
-            raise ValueError(f"unauthorized asset: {symbol}")
-        if not isinstance(amount, (int, float)) or amount <= 0:
-            raise ValueError(f"invalid trade volume: {amount}")
-        return {"ticker": symbol, "amount": float(amount)}
+    def register_hook(self, event: str, callback: Callable):
+        self._registry[event] = callback
 
-def process_market_data(stream, sanitizer):
-    for event in stream:
-        try:
-            validated_data = sanitizer(event)
-            print(f"processing trade: {validated_data['ticker']} @ {validated_data['amount']}")
-        except ValueError as e:
-            logging.warning(f"dropped malicious or malformed packet: {e}")
+    def execute(self, event: str, payload: Any):
+        action = self._registry.get(event)
+        if action:
+            try:
+                return action(payload)
+            except Exception as e:
+                self.logger.error(f'event {event} failed: {e}')
+                return None
+        return None
+
+class DataPipeline(CryptoHandler):
+    def process_batch(self, data: list):
+        return [self.execute('transform', item) for item in data if item]
+
+    def sanitize_ticker(self, ticker: str) -> str:
+        return str(ticker).strip().upper().replace('/', '_')
 
 if __name__ == '__main__':
-    assets = ['BTC', 'ETH', 'SOL']
-    validator = CryptoInputSanitizer(assets)
-    mock_stream = [
-        {"ticker": "BTC", "amount": 0.5},
-        {"ticker": "DOGE", "amount": 100},
-        {"ticker": "ETH", "amount": -1},
-        {"ticker": "SOL", "amount": 10.2}
-    ]
-    process_market_data(mock_stream, validator)
+    pipeline = DataPipeline()
+    pipeline.register_hook('transform', lambda x: x.upper())
+    print(pipeline.process_batch(['btc/usd', 'eth/btc']))
