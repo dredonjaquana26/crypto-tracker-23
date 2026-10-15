@@ -1,32 +1,45 @@
-import re
+import functools
 
-class CryptoValidator:
-    def __init__(self):
-        self.ticker_pattern = re.compile(r'^[A-Z0-9]{2,10}$')
-        self.allowed_pairs = {'BTC', 'ETH', 'SOL', 'ADA', 'DOT'}
+class CryptoValidationException(Exception):
+    pass
 
-    def validate_payload(self, data: dict) -> bool:
-        ticker = data.get('symbol', '').upper()
-        price = data.get('price', 0)
-        
-        if not self.ticker_pattern.match(ticker):
-            return False
-        if ticker not in self.allowed_pairs:
-            return False
-        if not isinstance(price, (int, float)) or price <= 0:
-            return False
-        return True
+def sanitize_price(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            result = func(*args, **kwargs)
+            if result is None or (isinstance(result, (int, float)) and result < 0):
+                raise CryptoValidationException("negative or null pricing data detected")
+            return result
+        except (TypeError, ValueError) as e:
+            return 0.0
+    return wrapper
 
-    def sanitize_input(self, raw_data: dict) -> dict:
-        return {
-            'symbol': str(raw_data.get('symbol', '')).strip().upper(),
-            'price': float(raw_data.get('price', 0)),
-            'timestamp': raw_data.get('ts', 0)
-        }
+class DataValidator:
+    @staticmethod
+    def validate_ticker(ticker: str) -> str:
+        if not isinstance(ticker, str) or len(ticker) < 2:
+            raise CryptoValidationException("invalid ticker format")
+        return ticker.upper().strip()
 
-def process_stream(data_stream, validator: CryptoValidator):
-    for entry in data_stream:
-        if validator.validate_payload(entry):
-            yield validator.sanitize_input(entry)
-        else:
-            continue
+    @staticmethod
+    @sanitize_price
+    def process_raw_value(raw: any) -> float:
+        if isinstance(raw, str):
+            return float(raw.replace('$', '').replace(',', ''))
+        return float(raw)
+
+def circuit_breaker(max_retries=3):
+    def decorator(func):
+        retries = [0]
+        @functools.wraps(func)
+        def inner(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception:
+                retries[0] += 1
+                if retries[0] >= max_retries:
+                    return None
+                return inner(*args, **kwargs)
+        return inner
+    return decorator
