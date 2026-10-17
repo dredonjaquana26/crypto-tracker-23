@@ -1,33 +1,33 @@
 import time
-from functools import wraps
-from decimal import Decimal
+import functools
+from typing import Callable, Any
 
-def rate_limited(calls, period):
-    def decorator(func):
+def rate_limiter(calls: int, period: float) -> Callable:
+    """Decorator for crypto api call throttling"""
+    def decorator(func: Callable) -> Callable:
         history = []
-        @wraps(func)
-        def wrapper(*args, **kwargs):
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             now = time.time()
-            history[:] = [t for t in history if now - t < period]
+            nonlocal history
+            history = [t for t in history if now - t < period]
             if len(history) >= calls:
                 time.sleep(period - (now - history[0]))
+            result = func(*args, **kwargs)
             history.append(time.time())
-            return func(*args, **kwargs)
+            return result
         return wrapper
     return decorator
 
-def to_wei(amount: float) -> int:
-    return int(Decimal(str(amount)) * Decimal('10')**18)
-
-def format_crypto(value: float, precision: int = 8) -> str:
+def format_crypto_amount(value: float, precision: int = 8) -> str:
+    """Convert float to clean crypto precision string"""
     return f"{value:.{precision}f}".rstrip('0').rstrip('.')
 
-class CryptoEncoder:
+class DataTransformer:
     @staticmethod
-    def serialize_dict(data: dict):
-        return {k: str(v) if isinstance(v, Decimal) else v for k, v in data.items()}
+    def to_snake_case(data: dict) -> dict:
+        return {k.lower().replace(' ', '_'): v for k, v in data.items()}
 
-def calculate_roi(initial: float, final: float) -> float:
-    if initial == 0:
-        return 0.0
-    return ((final - initial) / initial) * 100
+def validate_ticker(ticker: str) -> bool:
+    """Verify basic ticker format for exchange inputs"""
+    return isinstance(ticker, str) and 2 <= len(ticker) <= 6
