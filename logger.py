@@ -1,32 +1,44 @@
 import logging
-import json
+import os
+from logging.handlers import RotatingFileHandler
 from datetime import datetime
 
-class CryptoFormatter(logging.Formatter):
-    def format(self, record):
-        log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "level": record.levelname,
-            "module": record.module,
-            "payload": record.getMessage()
-        }
-        return json.dumps(log_entry)
+class CryptoLogger:
+    """Custom logger for crypto-tracker-23 using rotational mechanics."""
+    def __init__(self, name="crypto_tracker", log_dir="logs"):
+        self.name = name
+        self.log_dir = log_dir
+        self._ensure_dir()
+        self.logger = logging.getLogger(self.name)
+        self.logger.setLevel(logging.DEBUG)
+        self._configure_handler()
 
-def setup_crypto_logger(name: str = "crypto-tracker-23") -> logging.Logger:
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
-    console_handler = logging.StreamHandler()
-    formatter = CryptoFormatter()
-    
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
-    
-    return logger
+    def _ensure_dir(self):
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir)
 
-# Usage example for the tracker
-def log_trade_event(logger, symbol: str, price: float, side: str):
-    data = {"symbol": symbol, "price": price, "side": side, "event": "execution"}
-    logger.info(json.dumps(data))
+    def _configure_handler(self):
+        log_file = os.path.join(self.log_dir, f"{self.name}.log")
+        handler = RotatingFileHandler(
+            log_file,
+            maxBytes=5 * 1024 * 1024,
+            backupCount=3,
+            encoding='utf-8'
+        )
+        formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)s | [%(name)s] >> %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
+        console = logging.StreamHandler()
+        console.setFormatter(formatter)
+        self.logger.addHandler(console)
 
-tracker_logger = setup_crypto_logger()
+    def get_logger(self):
+        return self.logger
+
+def setup_crypto_logger():
+    return CryptoLogger().get_logger()
+
+logger = setup_crypto_logger()
