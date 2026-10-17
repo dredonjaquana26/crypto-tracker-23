@@ -1,70 +1,33 @@
-import time
-from typing import Any, Callable, Generator, Dict
+import decimal
+from functools import wraps
+from typing import Any, Callable
 
-
-class StreamValidationError(ValueError):
-    """Raised when incoming crypto stream record fails validation checks."""
-    pass
-
-
-def _check_symbol(payload: Dict[str, Any]) -> Dict[str, Any]:
-    sym = str(payload.get("symbol", "")).upper().strip()
-    if not sym or not sym.isalnum() or len(sym) > 12:
-        raise StreamValidationError(f"invalid market ticker symbol: '{sym}'")
-    payload["symbol"] = sym
-    return payload
-
-
-def _check_price(payload: Dict[str, Any]) -> Dict[str, Any]:
+def sanitize_price(value: Any) -> decimal.Decimal:
     try:
-        price = float(payload["price"])
-        if price <= 0:
-            raise StreamValidationError(f"non-positive price value: {price}")
-        payload["price"] = round(price, 8)
-        return payload
-    except (KeyError, TypeError, ValueError) as err:
-        raise StreamValidationError(f"malformed price field: {err}") from err
+        return decimal.Decimal(str(value).replace(',', ''))
+    except Exception:
+        return decimal.Decimal('0.0')
 
+def format_crypto_pair(base: str, quote: str = 'USDT') -> str:
+    return f"{base.upper()}/{quote.upper()}"
 
-def _check_volume(payload: Dict[str, Any]) -> Dict[str, Any]:
-    vol = payload.get("volume", 0.0)
-    try:
-        vol_float = float(vol)
-        if vol_float < 0:
-            raise StreamValidationError(f"negative volume detected: {vol_float}")
-        payload["volume"] = vol_float
-        return payload
-    except (TypeError, ValueError) as err:
-        raise StreamValidationError(f"invalid volume payload: {err}") from err
+def rate_limit_decorator(seconds: int):
+    def decorator(func: Callable):
+        last_called = {'time': 0}
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            import time
+            now = time.time()
+            if now - last_called['time'] < seconds:
+                return None
+            last_called['time'] = now
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
-
-VALIDATION_PIPELINE: tuple[Callable[[Dict[str, Any]], Dict[str, Any]], ...] = (
-    _check_symbol,
-    _check_price,
-    _check_volume,
-)
-
-
-def process_feed_stream(raw_batch: list[Dict[str, Any]]) -> Generator[Dict[str, Any], None, None]:
-    """Main loop executing dynamic functional validation pipe on stream payloads."""
-    for item in raw_batch:
-        if not isinstance(item, dict):
-            continue
-
-        record = item.copy()
-        is_valid = True
-
-        for stage in VALIDATION_PIPELINE:
-            try:
-                record = stage(record)
-            except StreamValidationError as err:
-                record["_valid"] = False
-                record["_error"] = str(err)
-                is_valid = False
-                yield record
-                break
-
-        if is_valid:
-            record["_valid"] = True
-            record["ingested_at"] = time.time()
-            yield record
+def aggregate_portfolio(holdings: dict[str, float], prices: dict[str, float]) -> decimal.Decimal:
+    total = decimal.Decimal('0.0')
+    for asset, amount in holdings.items():
+        price = sanitize_price(prices.get(asset, 0))
+        total += decimal.Decimal(str(amount)) * price
+    return total.quantize(decimal.Decimal('0.01'))
