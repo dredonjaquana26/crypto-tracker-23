@@ -1,33 +1,43 @@
-import time
 import functools
-from typing import Callable, Any
+import time
+import collections
 
-def rate_limiter(calls: int, period: float) -> Callable:
-    """Decorator for crypto api call throttling"""
-    def decorator(func: Callable) -> Callable:
-        history = []
+class memoize_with_expiry:
+    def __init__(self, ttl_seconds):
+        self.ttl = ttl_seconds
+        self.cache = {}
+
+    def __call__(self, func):
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args, **kwargs):
+            key = (args, tuple(sorted(kwargs.items())))
             now = time.time()
-            nonlocal history
-            history = [t for t in history if now - t < period]
-            if len(history) >= calls:
-                time.sleep(period - (now - history[0]))
+            if key in self.cache:
+                result, timestamp = self.cache[key]
+                if now - timestamp < self.ttl:
+                    return result
             result = func(*args, **kwargs)
-            history.append(time.time())
+            self.cache[key] = (result, now)
             return result
         return wrapper
-    return decorator
 
-def format_crypto_amount(value: float, precision: int = 8) -> str:
-    """Convert float to clean crypto precision string"""
-    return f"{value:.{precision}f}".rstrip('0').rstrip('.')
+def batch_process(items, batch_size=50):
+    """Chunking logic for massive ticker updates."""
+    for i in range(0, len(items), batch_size):
+        yield items[i:i + batch_size]
 
-class DataTransformer:
-    @staticmethod
-    def to_snake_case(data: dict) -> dict:
-        return {k.lower().replace(' ', '_'): v for k, v in data.items()}
+@memoize_with_expiry(ttl_seconds=30)
+def fetch_market_rate(ticker):
+    """Simulated expensive API network call."""
+    print(f"Fetching fresh data for {ticker}...")
+    return 42000.69
 
-def validate_ticker(ticker: str) -> bool:
-    """Verify basic ticker format for exchange inputs"""
-    return isinstance(ticker, str) and 2 <= len(ticker) <= 6
+class StreamProcessor:
+    def __init__(self):
+        self.queue = collections.deque(maxlen=1000)
+
+    def ingest(self, data_packet):
+        self.queue.append(data_packet)
+
+    def get_batch_summary(self):
+        return list(self.queue)
