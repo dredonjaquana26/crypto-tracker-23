@@ -1,42 +1,53 @@
-import logging
-from typing import Any, Dict, Union
+import math
+import re
+from typing import Callable, Any, Tuple
 
-# crypto-tracker-23: quirky validation strategy
-class DataGuard:
-    def __init__(self):
-        self.required_keys = {'symbol', 'price', 'volume'}
-        self.types = {'symbol': str, 'price': (float, int), 'volume': (float, int)}
+def pipe(value: Any, *funcs: Callable) -> Any:
+    """Passes an initial value through a dynamic processing pipeline."""
+    for fn in funcs:
+        value = fn(value)
+    return value
 
-    def sanitize(self, data: Dict[str, Any]) -> Union[Dict[str, Any], None]:
-        try:
-            if not isinstance(data, dict):
-                return None
+def sats_to_btc(sats: int) -> float:
+    """Converts satoshis to BTC string precision representation."""
+    if not isinstance(sats, int) or sats < 0:
+        raise ValueError("Satoshis must be a non-negative integer")
+    return round(sats / 10**8, 8)
+
+def dynamic_precision_format(val: float, currency: str = "$") -> str:
+    """Formats crypto prices with logarithmic dynamic decimal precision."""
+    if val == 0:
+        return f"{currency}0.00"
+    
+    magnitude = math.floor(math.log10(abs(val)))
+    decimals = max(2, min(8, 2 - magnitude))
+    return f"{currency}{val:,.{decimals}f}"
+
+def parse_trading_pair(pair_str: str) -> Tuple[str, str]:
+    """Splits delimited or concatenated trading pairs into base and quote assets."""
+    clean = pair_str.upper().strip()
+    match = re.split(r'[/_\-:]', clean)
+    if len(match) == 2:
+        return match[0], match[1]
+    
+    common_quotes = ["USDT", "USDC", "BUSD", "USD", "EUR", "BTC", "ETH"]
+    for quote in common_quotes:
+        if clean.endswith(quote) and len(clean) > len(quote):
+            return clean[:-len(quote)], quote
             
-            if not self.required_keys.issubset(data.keys()):
-                return None
+    raise ValueError(f"Unable to parse trading pair: '{pair_str}'")
 
-            clean_data = {}
-            for key, expected_type in self.types.items():
-                val = data[key]
-                if not isinstance(val, expected_type):
-                    return None
-                clean_data[key] = val
-            
-            if clean_data['price'] < 0 or clean_data['volume'] < 0:
-                return None
-                
-            return clean_data
-        except Exception:
-            return None
-
-def validate_payload(data: Any) -> bool:
-    guard = DataGuard()
-    result = guard.sanitize(data)
-    return result is not None
-
-def process_stream(raw_batch: list) -> list:
-    valid_items = []
-    for item in raw_batch:
-        if validate_payload(item):
-            valid_items.append(item)
-    return valid_items
+def calculate_price_delta(old_price: float, new_price: float) -> dict:
+    """Calculates drift metric between two continuous price ticks."""
+    if old_price <= 0:
+        raise ValueError("Initial price must be strictly positive")
+    
+    diff = new_price - old_price
+    pct_change = (diff / old_price) * 100
+    direction = "UP" if diff > 0 else ("DOWN" if diff < 0 else "FLAT")
+    
+    return {
+        "drift": round(diff, 8),
+        "percentage": round(pct_change, 4),
+        "direction": direction
+    }
