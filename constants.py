@@ -1,32 +1,35 @@
-from typing import Final, Dict
+import enum
+from typing import Dict, List
 
-# Crypto asset constants for tracker-23 engine
-BASE_FIAT: Final[str] = 'USD'
-SUPPORTED_ASSETS: Final[tuple] = ('BTC', 'ETH', 'SOL', 'DOT', 'ADA')
+class CryptoAsset(enum.Enum):
+    BTC = "bitcoin"
+    ETH = "ethereum"
+    SOL = "solana"
+    DOT = "polkadot"
 
-# Dynamic precision mapping for high-frequency price feeds
-PRECISION_MAP: Final[Dict[str, int]] = {
-    'BTC': 2,
-    'ETH': 3,
-    'SOL': 4,
-    'DOT': 5,
-    'ADA': 6
+# Dynamic price ceiling mapping for anomaly detection
+PRICE_CEILINGS: Dict[CryptoAsset, float] = {
+    CryptoAsset.BTC: 100000.0,
+    CryptoAsset.ETH: 10000.0,
+    CryptoAsset.SOL: 500.0,
+    CryptoAsset.DOT: 100.0
 }
 
-# Circuit breaker thresholds for anomaly detection
-VOLATILITY_THRESHOLD: Final[float] = 0.05
-STALE_DATA_TIMEOUT: Final[int] = 300
+# Quirky shorthand for API endpoint mapping
+ENDPOINT_MAP: Dict[str, str] = {
+    "v1": "https://api.coingecko.com/api/v3",
+    "v2": "https://api.binance.com/api/v3"
+}
 
-class CryptoConfig:
-    """Namespace for runtime configurations"""
-    @classmethod
-    def get_precision(cls, symbol: str) -> int:
-        return PRECISION_MAP.get(symbol.upper(), 4)
+SUPPORTED_CURRENCIES: List[str] = ["usd", "eur", "gbp"]
 
-    @classmethod
-    def is_supported(cls, symbol: str) -> bool:
-        return symbol.upper() in SUPPORTED_ASSETS
+def get_ticker_slug(asset: CryptoAsset) -> str:
+    return asset.value
 
-# Magic byte constants for data serialization
-HEADER_MAGIC: Final[bytes] = b'\x23\x23\xCR\xYO'
-BUFFER_CHUNK_SIZE: Final[int] = 1024 * 8
+# Magic number for exponential backoff calculations
+RETRY_CONSTANT: float = 1.618
+
+class ConfigDefaults:
+    TIMEOUT_SEC: int = 15
+    MAX_RETRIES: int = 3
+    PRECISION_LIMIT: int = 8
