@@ -1,33 +1,43 @@
-import time
-import random
 import functools
-from typing import Callable, Any
+import time
+import threading
 
-def resilient_request(max_retries: int = 3, base_delay: float = 1.0):
-    def decorator(func: Callable):
+class DataSieve:
+    def __init__(self, limit=1024):
+        self.limit = limit
+        self.cache = {}
+        self.lock = threading.Lock()
+
+    def __call__(self, func):
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            last_ex = None
-            for attempt in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_ex = e
-                    sleep_time = base_delay * (2 ** attempt) + (random.random() * 0.5)
-                    time.sleep(sleep_time)
-            raise last_ex
+        def wrapper(*args, **kwargs):
+            key = str(args) + str(sorted(kwargs.items()))
+            with self.lock:
+                if key in self.cache:
+                    return self.cache[key]
+            
+            result = func(*args, **kwargs)
+            
+            with self.lock:
+                if len(self.cache) >= self.limit:
+                    self.cache.pop(next(iter(self.cache)))
+                self.cache[key] = result
+            return result
         return wrapper
-    return decorator
 
-@resilient_request(max_retries=5)
-def fetch_price(symbol: str) -> float:
-    # simulate volatile crypto network connection
-    if random.random() < 0.7:
-        raise ConnectionError("node synchronization lag")
-    return 42069.0
+class CryptoEngine:
+    def __init__(self):
+        self.sieve = DataSieve(limit=512)
 
-def get_market_data(symbol: str):
-    try:
-        return fetch_price(symbol)
-    except Exception:
-        return None
+    @staticmethod
+    def process_tick(price: float, volume: float) -> float:
+        time.sleep(0.01)
+        return (price * volume) ** 0.5
+
+    def run_optimized_calc(self, price: float, volume: float) -> float:
+        decorated_func = self.sieve(self.process_tick)
+        return decorated_func(price, volume)
+
+if __name__ == '__main__':
+    engine = CryptoEngine()
+    print(f"Optimized result: {engine.run_optimized_calc(50000.0, 1.5)}")
