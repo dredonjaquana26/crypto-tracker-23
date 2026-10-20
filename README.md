@@ -1,17 +1,19 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 # crypto-tracker-23
 
-A high-performance Python CLI tool designed to track real-time cryptocurrency market data and portfolio performance. It leverages the CoinGecko API to provide accurate price feeds and historical trend analysis directly in your terminal.
+`crypto-tracker-23` is a lightweight Python library and terminal tool for tracking real-time cryptocurrency prices, portfolio performance, and market volatility. Built on top of the CoinGecko REST API, it delivers low-latency market updates with zero initial configuration required.
 
 ## Features
 
-*   **Live Price Monitoring:** Fetches sub-second price updates for top 100 cryptocurrencies with customizable refresh intervals.
-*   **Portfolio Tracking:** Automatically calculates total holdings value by ingesting a local `assets.json` configuration file.
-*   **Historical Analysis:** Generates ASCII-based trend charts to visualize price volatility over the last 24 hours.
-*   **Alert System:** Configurable threshold notifications that trigger desktop alerts when a coin hits a specified buy or sell price.
+- **Real-Time Price Streams**: Monitor current prices, 24-hour volume, and market cap metrics for over 2,000 crypto assets.
+- **Portfolio P&L Calculation**: Calculate live profit and loss balances against historical purchase points defined in a local JSON config.
+- **Volatility Threshold Alerts**: Set automated console warnings when tracked assets drop or surge beyond custom percentage thresholds.
+- **Data Export Utilities**: Export price snapshots and portfolio summaries directly to structured CSV and JSON formats.
 
 ## Installation
 
-Ensure you have Python 3.8+ installed. Clone the repository and install the required dependencies:
+Ensure you have Python 3.9+ installed, then clone the repository and install the dependencies:
 
 ```bash
 git clone https://github.com/Developer/crypto-tracker-23.git
@@ -19,28 +21,31 @@ cd crypto-tracker-23
 pip install -r requirements.txt
 ```
 
-## Usage
+## Quick Start
 
-To view the current market dashboard, run the main entry point:
+### Programmatic Usage
 
-```bash
-python main.py --view market
+```python
+from crypto_tracker import CryptoTracker
+
+# Initialize the tracker for USD quotes
+tracker = CryptoTracker(currency="usd")
+
+# Fetch live metrics for targeted assets
+data = tracker.get_prices(coins=["bitcoin", "ethereum", "solana"])
+
+for coin, metrics in data.items():
+    print(f"{coin.capitalize()}: ${metrics['price']:,.2f} | 24h: {metrics['change_24h']:+.2f}%")
 ```
 
-To track your custom portfolio defined in `assets.json`:
+### Command Line Interface
+
+Run live monitoring directly from your terminal:
 
 ```bash
-python main.py --track portfolio --file assets.json
-```
-
-For a full list of commands and available exchange markets, use the help flag:
-
-```bash
-python main.py --help
+python -m crypto_tracker --coins bitcoin,ethereum --interval 15 --watch
 ```
 
 ## License
 
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Distributed under the MIT License. See `LICENSE` for details.
