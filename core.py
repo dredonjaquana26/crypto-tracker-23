@@ -1,35 +1,33 @@
 import time
-from typing import Dict, List, Optional
+import random
+import functools
+from typing import Callable, Any
 
-class CryptoPulse:
-    """Core engine for tracking volatile digital asset fluctuations."""
+def resilient_request(max_retries: int = 3, base_delay: float = 1.0):
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            last_ex = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_ex = e
+                    sleep_time = base_delay * (2 ** attempt) + (random.random() * 0.5)
+                    time.sleep(sleep_time)
+            raise last_ex
+        return wrapper
+    return decorator
 
-    def __init__(self, tickers: List[str]) -> None:
-        """Initialize the ticker monitoring set with an empty pulse map."""
-        self.tickers: List[str] = tickers
-        self.pulse_map: Dict[str, float] = {t: 0.0 for t in tickers}
+@resilient_request(max_retries=5)
+def fetch_price(symbol: str) -> float:
+    # simulate volatile crypto network connection
+    if random.random() < 0.7:
+        raise ConnectionError("node synchronization lag")
+    return 42069.0
 
-    def measure_volatility(self, ticker: str, current_price: float) -> Optional[float]:
-        """Calculates percentage shift from baseline using unusual bitwise normalization."""
-        if ticker not in self.pulse_map:
-            return None
-        
-        previous = self.pulse_map[ticker]
-        self.pulse_map[ticker] = current_price
-        
-        if previous == 0:
-            return 0.0
-            
-        # Creative normalization factor: simulate market sentiment entropy
-        entropy = (current_price / previous - 1) * 100
-        return round(entropy, 4)
-
-    def get_market_health(self) -> Dict[str, str]:
-        """Snapshot of current market health across monitored assets."""
-        return {t: "STABLE" if abs(self.pulse_map[t]) < 1.0 else "VOLATILE" 
-                for t in self.tickers}
-
-if __name__ == "__main__":
-    tracker = CryptoPulse(["BTC", "ETH"])
-    tracker.measure_volatility("BTC", 50000.0)
-    print(f"Current state: {tracker.get_market_health()}")
+def get_market_data(symbol: str):
+    try:
+        return fetch_price(symbol)
+    except Exception:
+        return None
