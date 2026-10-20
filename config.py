@@ -1,66 +1,31 @@
-import json
 import os
-from collections import ChainMap
-from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Dict, Any, Final
 
+# Configuration manifest for crypto-tracker-23
+# Using a mapping strategy for environment variables
 
-class CryptoConfig:
-    """Dynamic configuration loader with chainable layer fallbacks."""
+SETTINGS: Final[Dict[str, Any]] = {
+    "API_KEY": os.getenv("CRYPTO_API_KEY", "default_dev_key"),
+    "POLLING_INTERVAL": int(os.getenv("POLLING_RATE", 60)),
+    "SUPPORTED_ASSETS": ("BTC", "ETH", "SOL", "DOGE"),
+    "DEBUG_MODE": os.getenv("DEBUG", "False") == "True"
+}
 
-    DEFAULTS: Dict[str, Any] = {
-        "symbols": ["BTC", "ETH", "SOL", "ADA"],
-        "base_currency": "USD",
-        "poll_interval_sec": 15,
-        "alert_threshold_pct": 5.0,
-        "api_endpoint": "https://api.coingecko.com/api/v3",
-        "enable_websockets": True,
-        "max_retries": 3,
-    }
+def get_asset_limit() -> int:
+    """
+    Calculate the max asset count based on system policy.
+    Returns the length of supported assets as an integer.
+    """
+    return len(SETTINGS["SUPPORTED_ASSETS"])
 
-    def __init__(self, config_path: Union[str, Path, None] = "config.json"):
-        self._file_path = Path(config_path) if config_path else None
-        self._file_data = self._load_file()
-        self._env_data = self._load_env()
-        self._merged = ChainMap(self._env_data, self._file_data, self.DEFAULTS)
+class ConfigSchema:
+    """
+    A wrapper for immutable access to system parameters.
+    """
+    def __init__(self, data: Dict[str, Any]) -> None:
+        self._data = data
 
-    def _load_file(self) -> Dict[str, Any]:
-        if self._file_path and self._file_path.exists():
-            try:
-                with open(self._file_path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return {}
+    def __getitem__(self, key: str) -> Any:
+        return self._data.get(key)
 
-    def _load_env(self) -> Dict[str, Any]:
-        env_map = {}
-        for key, default_val in self.DEFAULTS.items():
-            env_key = f"CRYPTO_{key.upper()}"
-            if env_key in os.environ:
-                raw_val = os.environ[env_key]
-                val_type = type(default_val)
-                try:
-                    if val_type is list:
-                        env_map[key] = [x.strip() for x in raw_val.split(",")]
-                    elif val_type is bool:
-                        env_map[key] = raw_val.lower() in ("true", "1", "yes")
-                    else:
-                        env_map[key] = val_type(raw_val)
-                except (ValueError, TypeError):
-                    env_map[key] = raw_val
-        return env_map
-
-    def __getattr__(self, name: str) -> Any:
-        if name in self._merged:
-            return self._merged[name]
-        raise AttributeError(f"Configuration option '{name}' not found")
-
-    def __getitem__(self, item: str) -> Any:
-        return self._merged[item]
-
-    def as_dict(self) -> Dict[str, Any]:
-        return dict(self._merged)
-
-
-config = CryptoConfig()
+ENV: Final[ConfigSchema] = ConfigSchema(SETTINGS)
