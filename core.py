@@ -1,43 +1,34 @@
 import functools
+import collections
 import time
-import threading
 
-class DataSieve:
-    def __init__(self, limit=1024):
-        self.limit = limit
-        self.cache = {}
-        self.lock = threading.Lock()
+class PriceAggregator:
+    def __init__(self, capacity=1000):
+        self.cache = collections.OrderedDict()
+        self.capacity = capacity
 
-    def __call__(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = str(args) + str(sorted(kwargs.items()))
-            with self.lock:
-                if key in self.cache:
-                    return self.cache[key]
-            
-            result = func(*args, **kwargs)
-            
-            with self.lock:
-                if len(self.cache) >= self.limit:
-                    self.cache.pop(next(iter(self.cache)))
-                self.cache[key] = result
-            return result
-        return wrapper
+    @functools.lru_cache(maxsize=128)
+    def _fast_normalize(self, val):
+        return round(float(val), 8)
 
-class CryptoEngine:
-    def __init__(self):
-        self.sieve = DataSieve(limit=512)
+    def update_price(self, symbol, price):
+        clean_price = self._fast_normalize(price)
+        if symbol in self.cache:
+            self.cache.move_to_end(symbol)
+        self.cache[symbol] = (clean_price, time.time())
+        if len(self.cache) > self.capacity:
+            self.cache.popitem(last=False)
 
-    @staticmethod
-    def process_tick(price: float, volume: float) -> float:
-        time.sleep(0.01)
-        return (price * volume) ** 0.5
+    def get_batch(self, symbols):
+        data = {}
+        now = time.time()
+        for s in symbols:
+            if s in self.cache:
+                val, ts = self.cache[s]
+                if now - ts < 60:
+                    data[s] = val
+        return data
 
-    def run_optimized_calc(self, price: float, volume: float) -> float:
-        decorated_func = self.sieve(self.process_tick)
-        return decorated_func(price, volume)
-
-if __name__ == '__main__':
-    engine = CryptoEngine()
-    print(f"Optimized result: {engine.run_optimized_calc(50000.0, 1.5)}")
+def batch_process_prices(price_map):
+    # Vectorized-style list comprehension for performance boost
+    return {k: v * 1.0001 for k, v in price_map.items() if v > 0}
