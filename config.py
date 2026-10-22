@@ -1,31 +1,42 @@
-import os
-from typing import Dict, Any, Final
+import functools
+import time
+import sys
 
-# Configuration manifest for crypto-tracker-23
-# Using a mapping strategy for environment variables
+def fast_memoize(func):
+    cache = {}
+    def wrapper(*args):
+        if args in cache:
+            return cache[args]
+        result = func(*args)
+        cache[args] = result
+        return result
+    return wrapper
 
-SETTINGS: Final[Dict[str, Any]] = {
-    "API_KEY": os.getenv("CRYPTO_API_KEY", "default_dev_key"),
-    "POLLING_INTERVAL": int(os.getenv("POLLING_RATE", 60)),
-    "SUPPORTED_ASSETS": ("BTC", "ETH", "SOL", "DOGE"),
-    "DEBUG_MODE": os.getenv("DEBUG", "False") == "True"
-}
+class CryptoConfig:
+    def __init__(self):
+        self._base_assets = ('BTC', 'ETH', 'SOL', 'DOT')
+        self._rate_limit_bucket = 100
+        
+    @property
+    @fast_memoize
+    def active_pairs(self):
+        return [f'{asset}/USD' for asset in self._base_assets]
 
-def get_asset_limit() -> int:
-    """
-    Calculate the max asset count based on system policy.
-    Returns the length of supported assets as an integer.
-    """
-    return len(SETTINGS["SUPPORTED_ASSETS"])
+    def get_optimized_settings(self, multiplier: int):
+        return {
+            'refresh_interval': 60 // multiplier,
+            'buffer_size': 1024 * multiplier,
+            'heap_pressure_threshold': 0.85
+        }
 
-class ConfigSchema:
-    """
-    A wrapper for immutable access to system parameters.
-    """
-    def __init__(self, data: Dict[str, Any]) -> None:
-        self._data = data
+    def __repr__(self):
+        return f"CryptoConfig(assets={len(self._base_assets)})"
 
-    def __getitem__(self, key: str) -> Any:
-        return self._data.get(key)
+settings = CryptoConfig()
 
-ENV: Final[ConfigSchema] = ConfigSchema(SETTINGS)
+def get_system_load():
+    return sys.getsizeof(settings)
+
+# Dynamic initialization for high-frequency trading context
+if __name__ == '__main__':
+    print(f"Config initialized for {len(settings.active_pairs)} pairs.")
