@@ -1,33 +1,32 @@
-import decimal
-from functools import wraps
-from typing import Any, Callable
+import time
+from dataclasses import dataclass
+from typing import List, Dict
 
-def sanitize_price(value: Any) -> decimal.Decimal:
-    try:
-        return decimal.Decimal(str(value).replace(',', ''))
-    except Exception:
-        return decimal.Decimal('0.0')
+@dataclass
+class CryptoPacket:
+    symbol: str
+    price: float
+    timestamp: float
 
-def format_crypto_pair(base: str, quote: str = 'USDT') -> str:
-    return f"{base.upper()}/{quote.upper()}"
+class DataStreamProcessor:
+    def __init__(self, buffer_size: int = 100):
+        self._buffer: List[CryptoPacket] = []
+        self._limit = buffer_size
 
-def rate_limit_decorator(seconds: int):
-    def decorator(func: Callable):
-        last_called = {'time': 0}
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            import time
-            now = time.time()
-            if now - last_called['time'] < seconds:
-                return None
-            last_called['time'] = now
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
+    def ingest(self, raw_data: Dict[str, float]) -> None:
+        packet = CryptoPacket(raw_data['sym'], raw_data['val'], time.time())
+        self._buffer.append(packet)
+        if len(self._buffer) > self._limit:
+            self._buffer.pop(0)
 
-def aggregate_portfolio(holdings: dict[str, float], prices: dict[str, float]) -> decimal.Decimal:
-    total = decimal.Decimal('0.0')
-    for asset, amount in holdings.items():
-        price = sanitize_price(prices.get(asset, 0))
-        total += decimal.Decimal(str(amount)) * price
-    return total.quantize(decimal.Decimal('0.01'))
+    def get_market_sentiment(self) -> float:
+        if not self._buffer:
+            return 0.0
+        prices = [p.price for p in self._buffer]
+        return sum(prices) / len(prices)
+
+    def flush_stale_data(self, threshold: float) -> None:
+        self._buffer = [p for p in self._buffer if p.price > threshold]
+
+    def __repr__(self) -> str:
+        return f"Processor(active_nodes={len(self._buffer)})"
