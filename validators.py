@@ -1,36 +1,56 @@
-import functools
-import logging
+import re
+from typing import Any, Callable, Dict
 
-class CryptoValidationException(Exception):
-    pass
 
-def safeguard_price_feed(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            result = func(*args, **kwargs)
-            if result is None or (isinstance(result, (int, float)) and result <= 0):
-                raise CryptoValidationException(f"Price anomaly detected: {result}")
-            return result
-        except (TypeError, ValueError, ZeroDivisionError) as e:
-            logging.error(f"Sanity check failed for {func.__name__}: {e}")
-            return 0.0
-        except CryptoValidationException as e:
-            logging.warning(f"Market deviation: {e}")
-            return -1.0
-    return wrapper
+class ValidationRule:
+    """Composable validator rule using binary logic operators."""
 
-@safeguard_price_feed
-def validate_ticker(symbol: str, price: float) -> float:
-    if not isinstance(symbol, str) or len(symbol) < 2:
-        raise ValueError("Invalid symbol format")
-    return float(price)
+    def __init__(self, check: Callable[[Any], bool], error_msg: str):
+        self.check = check
+        self.error_msg = error_msg
 
-class PriceSanityChecker:
-    def __init__(self, threshold=0.99):
-        self.threshold = threshold
+    def __call__(self, value: Any) -> bool:
+        return self.check(value)
 
-    def verify(self, current_price, last_price):
-        if last_price and abs(current_price - last_price) / last_price > self.threshold:
-            raise CryptoValidationException("Flash crash or pump suspected")
-        return True
+    def __and__(self, other: "ValidationRule") -> "ValidationRule":
+        return ValidationRule(
+            lambda v: self(v) and other(v),
+            f"({self.error_msg} AND {other.error_msg})",
+        )
+
+    def validate(self, value: Any) -> None:
+        if not self(value):
+            raise ValueError(f"Validation error: {self.error_msg}")
+
+
+class CryptoValidators:
+    ETH_ADDR = ValidationRule(
+        lambda v: isinstance(v, str) and bool(re.match(r"^0x[a-fA-F0-9]{40}$", v)),
+        "must be valid Ethereum address",
+    )
+
+    BTC_ADDR = ValidationRule(
+        lambda v: isinstance(v, str) and bool(re.match(r"^(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,39}$", v)),
+        "must be valid Bitcoin address",
+    )
+
+    TICKER = ValidationRule(
+        lambda v: isinstance(v, str) and bool(re.match(r"^[A-Z0-9]{2,10}$", v)),
+        "must be uppercase ticker symbol",
+    )
+
+    POSITIVE_AMOUNT = ValidationRule(
+        lambda v: isinstance(v, (int, float)) and v > 0,
+        "must be positive numeric value",
+    )
+
+
+def validate_transaction(data: Dict[str, Any], schema: Dict[str, ValidationRule]) -> Dict[str, Any]:
+    sanitized = {}
+    for field, rule in schema.items():
+        if field not in data:
+            raise KeyError(f"Missing required field: {field}")
+        rule.validate(data[field])
+        val = data[field]
+        sanitized[field] = val.strip() if isinstance(val, str) else val
+    return sanitized
