@@ -1,34 +1,38 @@
-import functools
-import collections
 import time
+import functools
+from decimal import Decimal
 
-class PriceAggregator:
-    def __init__(self, capacity=1000):
-        self.cache = collections.OrderedDict()
-        self.capacity = capacity
+def retry_on_fluctuation(attempts=3, delay=1):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_ex = None
+            for i in range(attempts):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_ex = e
+                    time.sleep(delay * (2 ** i))
+            raise last_ex
+        return wrapper
+    return decorator
 
-    @functools.lru_cache(maxsize=128)
-    def _fast_normalize(self, val):
-        return round(float(val), 8)
+def normalize_amount(value, precision=8):
+    """Converts raw ticker data into clean decimal objects."""
+    return Decimal(str(value)).quantize(Decimal('1.' + '0' * precision))
 
-    def update_price(self, symbol, price):
-        clean_price = self._fast_normalize(price)
-        if symbol in self.cache:
-            self.cache.move_to_end(symbol)
-        self.cache[symbol] = (clean_price, time.time())
-        if len(self.cache) > self.capacity:
-            self.cache.popitem(last=False)
+def format_currency_pair(base, quote):
+    return f"{base.upper()}/{quote.upper()}"
 
-    def get_batch(self, symbols):
-        data = {}
-        now = time.time()
-        for s in symbols:
-            if s in self.cache:
-                val, ts = self.cache[s]
-                if now - ts < 60:
-                    data[s] = val
-        return data
+class CryptoPayload:
+    def __init__(self, data):
+        self._raw = data
+    
+    def get_price(self):
+        val = self._raw.get('price') or self._raw.get('last_price', 0)
+        return normalize_amount(val)
 
-def batch_process_prices(price_map):
-    # Vectorized-style list comprehension for performance boost
-    return {k: v * 1.0001 for k, v in price_map.items() if v > 0}
+def compute_volatility(prices):
+    if len(prices) < 2: return 0
+    returns = [(prices[i] - prices[i-1]) / prices[i-1] for i in range(1, len(prices))]
+    return sum(abs(r) for r in returns) / len(returns)
