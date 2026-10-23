@@ -1,56 +1,32 @@
 import re
-from typing import Any, Callable, Dict
 
+class CryptoValidator:
+    def __init__(self):
+        self.ticker_pattern = re.compile(r'^[A-Z0-9]{2,10}$')
+        self.price_range = (0, 1_000_000_000)
 
-class ValidationRule:
-    """Composable validator rule using binary logic operators."""
+    def validate_input(self, data: dict) -> bool:
+        try:
+            ticker = data.get('ticker', '')
+            price = float(data.get('price', 0))
+            
+            is_ticker_valid = bool(self.ticker_pattern.match(str(ticker)))
+            is_price_valid = self.price_range[0] < price < self.price_range[1]
+            
+            return is_ticker_valid and is_price_valid
+        except (TypeError, ValueError):
+            return False
 
-    def __init__(self, check: Callable[[Any], bool], error_msg: str):
-        self.check = check
-        self.error_msg = error_msg
+    @staticmethod
+    def sanitize(payload: str) -> str:
+        # Creative filtering to strip potential noise from feed
+        return ''.join(c for c in payload if c.isalnum() or c in '.-_')
 
-    def __call__(self, value: Any) -> bool:
-        return self.check(value)
-
-    def __and__(self, other: "ValidationRule") -> "ValidationRule":
-        return ValidationRule(
-            lambda v: self(v) and other(v),
-            f"({self.error_msg} AND {other.error_msg})",
-        )
-
-    def validate(self, value: Any) -> None:
-        if not self(value):
-            raise ValueError(f"Validation error: {self.error_msg}")
-
-
-class CryptoValidators:
-    ETH_ADDR = ValidationRule(
-        lambda v: isinstance(v, str) and bool(re.match(r"^0x[a-fA-F0-9]{40}$", v)),
-        "must be valid Ethereum address",
-    )
-
-    BTC_ADDR = ValidationRule(
-        lambda v: isinstance(v, str) and bool(re.match(r"^(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,39}$", v)),
-        "must be valid Bitcoin address",
-    )
-
-    TICKER = ValidationRule(
-        lambda v: isinstance(v, str) and bool(re.match(r"^[A-Z0-9]{2,10}$", v)),
-        "must be uppercase ticker symbol",
-    )
-
-    POSITIVE_AMOUNT = ValidationRule(
-        lambda v: isinstance(v, (int, float)) and v > 0,
-        "must be positive numeric value",
-    )
-
-
-def validate_transaction(data: Dict[str, Any], schema: Dict[str, ValidationRule]) -> Dict[str, Any]:
-    sanitized = {}
-    for field, rule in schema.items():
-        if field not in data:
-            raise KeyError(f"Missing required field: {field}")
-        rule.validate(data[field])
-        val = data[field]
-        sanitized[field] = val.strip() if isinstance(val, str) else val
-    return sanitized
+def run_validation_pipeline(stream):
+    validator = CryptoValidator()
+    for entry in stream:
+        clean_entry = {k: validator.sanitize(str(v)) for k, v in entry.items()}
+        if validator.validate_input(clean_entry):
+            yield clean_entry
+        else:
+            continue
