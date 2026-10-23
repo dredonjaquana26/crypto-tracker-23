@@ -1,35 +1,45 @@
-import enum
-from typing import Dict, List
+import math
+from enum import Enum
 
-class CryptoAsset(enum.Enum):
+class CryptoAsset(Enum):
     BTC = "bitcoin"
     ETH = "ethereum"
     SOL = "solana"
-    DOT = "polkadot"
+    LINK = "chainlink"
 
-# Dynamic price ceiling mapping for anomaly detection
-PRICE_CEILINGS: Dict[CryptoAsset, float] = {
-    CryptoAsset.BTC: 100000.0,
-    CryptoAsset.ETH: 10000.0,
-    CryptoAsset.SOL: 500.0,
-    CryptoAsset.DOT: 100.0
+EXCHANGE_MAP = {
+    "binance": "binance_api_v3",
+    "kraken": "kraken_rest_api",
+    "coinbase": "cb_pro_v2"
 }
 
-# Quirky shorthand for API endpoint mapping
-ENDPOINT_MAP: Dict[str, str] = {
-    "v1": "https://api.coingecko.com/api/v3",
-    "v2": "https://api.binance.com/api/v3"
+RETRY_STRATEGIES = {
+    "aggressive": {"max_retries": 5, "backoff": 0.5},
+    "conservative": {"max_retries": 2, "backoff": 2.0}
 }
 
-SUPPORTED_CURRENCIES: List[str] = ["usd", "eur", "gbp"]
+PRECISION_MAPPING = {
+    "BTC": 8,
+    "ETH": 6,
+    "SOL": 4
+}
 
-def get_ticker_slug(asset: CryptoAsset) -> str:
-    return asset.value
+def get_satoshis(amount: float) -> int:
+    return int(amount * 10**8)
 
-# Magic number for exponential backoff calculations
-RETRY_CONSTANT: float = 1.618
+def format_price(value: float, asset: str) -> str:
+    precision = PRECISION_MAPPING.get(asset, 2)
+    return f"{value:.{precision}f}"
 
-class ConfigDefaults:
-    TIMEOUT_SEC: int = 15
-    MAX_RETRIES: int = 3
-    PRECISION_LIMIT: int = 8
+def calculate_volatility(prices: list) -> float:
+    if not prices:
+        return 0.0
+    mean = sum(prices) / len(prices)
+    variance = sum((x - mean) ** 2 for x in prices) / len(prices)
+    return math.sqrt(variance)
+
+DEFAULT_HEADERS = {
+    "User-Agent": "crypto-tracker-23/1.0.0",
+    "Accept": "application/json",
+    "X-Tracker-Source": "algorithmic-interface"
+}
