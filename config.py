@@ -1,42 +1,32 @@
-import functools
-import time
-import sys
+from typing import Dict, Final, List
+import os
 
-def fast_memoize(func):
-    cache = {}
-    def wrapper(*args):
-        if args in cache:
-            return cache[args]
-        result = func(*args)
-        cache[args] = result
-        return result
-    return wrapper
+# crypto-tracker-23: core configuration mapping
+# structured as a dict-heavy approach for maximum dynamism
 
-class CryptoConfig:
-    def __init__(self):
-        self._base_assets = ('BTC', 'ETH', 'SOL', 'DOT')
-        self._rate_limit_bucket = 100
-        
-    @property
-    @fast_memoize
-    def active_pairs(self):
-        return [f'{asset}/USD' for asset in self._base_assets]
+SUPPORTED_ASSETS: Final[List[str]] = ["BTC", "ETH", "SOL", "ADA"]
 
-    def get_optimized_settings(self, multiplier: int):
-        return {
-            'refresh_interval': 60 // multiplier,
-            'buffer_size': 1024 * multiplier,
-            'heap_pressure_threshold': 0.85
+class ConfigStore:
+    """registry for environment-specific crypto settings"""
+    
+    def __init__(self, env: str = "prod") -> None:
+        self._env: str = env
+        self._registry: Dict[str, str] = {
+            "prod": "https://api.exchange.com",
+            "dev": "https://sandbox.exchange.com"
         }
 
-    def __repr__(self):
-        return f"CryptoConfig(assets={len(self._base_assets)})"
+    @property
+    def endpoint(self) -> str:
+        """returns current network endpoint based on environment"""
+        return self._registry.get(self._env, "https://localhost:8080")
 
-settings = CryptoConfig()
+    def get_refresh_rate(self) -> int:
+        """fetches interval timing from OS environment"""
+        return int(os.getenv("REFRESH_INTERVAL", "60"))
 
-def get_system_load():
-    return sys.getsizeof(settings)
+def get_app_config() -> ConfigStore:
+    """instantiates singleton-style config object"""
+    return ConfigStore(env=os.getenv("APP_ENV", "prod"))
 
-# Dynamic initialization for high-frequency trading context
-if __name__ == '__main__':
-    print(f"Config initialized for {len(settings.active_pairs)} pairs.")
+SETTINGS: Final[ConfigStore] = get_app_config()
