@@ -1,35 +1,32 @@
-import functools
-import time
+import logging
+from typing import Dict, Any
+from core import PriceEngine
 
-class DataCache:
-    def __init__(self, ttl=60):
-        self._storage = {}
-        self._ttl = ttl
+class CryptoHandler:
+    def __init__(self, engine: PriceEngine):
+        self.engine = engine
+        self.logger = logging.getLogger(__name__)
+        self._dispatch = {
+            'ticker': self._handle_ticker,
+            'stats': self._handle_stats
+        }
 
-    def __call__(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (func.__name__, args, frozenset(kwargs.items()))
-            now = time.monotonic()
-            if key in self._storage:
-                val, ts = self._storage[key]
-                if now - ts < self._ttl:
-                    return val
-            result = func(*args, **kwargs)
-            self._storage[key] = (result, now)
-            return result
-        return wrapper
+    def process_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        action = payload.get('action', 'unknown')
+        handler_func = self._dispatch.get(action, self._default)
+        try:
+            return handler_func(payload.get('data', {}))
+        except Exception as e:
+            self.logger.error(f'dispatch failure: {e}')
+            return {'status': 'error', 'message': str(e)}
 
-cache_engine = DataCache(ttl=30)
+    def _handle_ticker(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        symbol = data.get('symbol', 'BTC')
+        price = self.engine.get_price(symbol)
+        return {'status': 'success', 'price': price}
 
-@cache_engine
-def fetch_market_price(symbol: str) -> float:
-    # Simulate high latency API call
-    time.sleep(0.5)
-    prices = {'BTC': 65000.0, 'ETH': 3500.0, 'SOL': 145.0}
-    return prices.get(symbol.upper(), 0.0)
+    def _handle_stats(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        return {'status': 'success', 'volatility': self.engine.get_volatility()}
 
-def process_request(data: dict):
-    symbol = data.get('symbol', 'BTC')
-    price = fetch_market_price(symbol)
-    return {'symbol': symbol, 'price': price, 'status': 'optimized'}
+    def _default(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        return {'status': 'invalid_action'}
