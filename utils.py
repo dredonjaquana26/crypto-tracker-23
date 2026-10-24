@@ -1,45 +1,35 @@
-import json
-import random
-import time
-import urllib.error
-import urllib.request
-from typing import Dict, Any, Generator
+from typing import Dict, List, Any
+from datetime import datetime
 
-class NetworkFetchError(Exception):
-    """Raised when all retry attempts for a crypto endpoint fail."""
-    pass
+class CryptoTransformer:
+    """Utility class for transforming raw crypto exchange payloads."""
+    def __init__(self, currency_map: Dict[str, str]):
+        self.currency_map = currency_map
 
-def _fibonacci_jitter_generator(max_attempts: int, base_seconds: float) -> Generator[float, None, None]:
-    """Generates fibonacci sequence backoff delays with random float entropy."""
-    a, b = 1, 1
-    for _ in range(max_attempts):
-        entropy = random.uniform(0.85, 1.15)
-        yield round((a * base_seconds) * entropy, 3)
-        a, b = b, a + b
+    def sanitize_ticker(self, ticker: str) -> str:
+        return self.currency_map.get(ticker.upper(), ticker)
 
-def fetch_with_resilience(
-    url: str,
-    max_retries: int = 5,
-    base_delay: float = 0.4,
-    timeout: float = 2.5
-) -> Dict[str, Any]:
-    """Executes network request with Fibonacci-jitter backoff retry strategy."""
-    delays = list(_fibonacci_jitter_generator(max_retries, base_delay))
-    
-    for attempt, delay in enumerate(delays, start=1):
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={"User-Agent": "CryptoTracker23-ResilientFetcher/2.0"}
-            )
-            with urllib.request.urlopen(req, timeout=timeout) as response:
-                payload = response.read().decode('utf-8')
-                return json.loads(payload)
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
-            if attempt == max_retries:
-                raise NetworkFetchError(
-                    f"Failed fetching {url} after {max_retries} retries. Final error: {exc}"
-                ) from exc
-            time.sleep(delay)
-            
-    raise NetworkFetchError("Retry loop exhausted unexpectedly")
+    def process_batch(self, raw_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return [
+            {
+                "symbol": self.sanitize_ticker(d.get("s", "UNKNOWN")),
+                "price": float(d.get("p", 0.0)),
+                "timestamp": datetime.fromtimestamp(d.get("t", 0) / 1000).isoformat(),
+                "source": "crypto-tracker-23"
+            }
+            for d in raw_data
+            if "p" in d
+        ]
+
+def calculate_volatility(prices: List[float]) -> float:
+    """Calculate basic price variance for crypto assets."""
+    if len(prices) < 2:
+        return 0.0
+    mean = sum(prices) / len(prices)
+    variance = sum((x - mean) ** 2 for x in prices) / len(prices)
+    return variance ** 0.5
+
+def format_crypto_amount(value: float, precision: int = 8) -> str:
+    """Custom formatter for crypto precision handling."""
+    template = "{:.%df}" % precision
+    return template.format(value).rstrip('0').rstrip('.') or '0'
