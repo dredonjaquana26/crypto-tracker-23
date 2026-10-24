@@ -1,32 +1,35 @@
-from typing import Dict, Final, List
+import json
 import os
+from pathlib import Path
+from typing import Any, Dict
 
-# crypto-tracker-23: core configuration mapping
-# structured as a dict-heavy approach for maximum dynamism
-
-SUPPORTED_ASSETS: Final[List[str]] = ["BTC", "ETH", "SOL", "ADA"]
-
-class ConfigStore:
-    """registry for environment-specific crypto settings"""
-    
-    def __init__(self, env: str = "prod") -> None:
-        self._env: str = env
-        self._registry: Dict[str, str] = {
-            "prod": "https://api.exchange.com",
-            "dev": "https://sandbox.exchange.com"
+class ConfigLoader:
+    def __init__(self, path: str = 'config.json'):
+        self.path = Path(path)
+        self._data: Dict[str, Any] = {
+            'api_endpoint': 'https://api.coingecko.com/api/v3',
+            'update_interval': 60,
+            'monitored_assets': ['bitcoin', 'ethereum']
         }
+        self._load()
 
-    @property
-    def endpoint(self) -> str:
-        """returns current network endpoint based on environment"""
-        return self._registry.get(self._env, "https://localhost:8080")
+    def _load(self) -> None:
+        if self.path.exists():
+            try:
+                with open(self.path, 'r') as f:
+                    loaded = json.load(f)
+                    self._data.update(loaded)
+            except (json.JSONDecodeError, IOError):
+                pass
 
-    def get_refresh_rate(self) -> int:
-        """fetches interval timing from OS environment"""
-        return int(os.getenv("REFRESH_INTERVAL", "60"))
+    def __getitem__(self, key: str) -> Any:
+        return self._data.get(key)
 
-def get_app_config() -> ConfigStore:
-    """instantiates singleton-style config object"""
-    return ConfigStore(env=os.getenv("APP_ENV", "prod"))
+    def save(self) -> None:
+        with open(self.path, 'w') as f:
+            json.dump(self._data, f, indent=4)
 
-SETTINGS: Final[ConfigStore] = get_app_config()
+    def __repr__(self) -> str:
+        return f"<ConfigLoader keys={list(self._data.keys())}>"
+
+config = ConfigLoader()
