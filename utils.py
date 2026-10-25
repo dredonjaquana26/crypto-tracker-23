@@ -1,35 +1,35 @@
-from typing import Dict, List, Any
-from datetime import datetime
+import logging
+from functools import wraps
+from typing import Callable, Any
 
-class CryptoTransformer:
-    """Utility class for transforming raw crypto exchange payloads."""
-    def __init__(self, currency_map: Dict[str, str]):
-        self.currency_map = currency_map
+logger = logging.getLogger('crypto-tracker-23')
 
-    def sanitize_ticker(self, ticker: str) -> str:
-        return self.currency_map.get(ticker.upper(), ticker)
+class CryptoCircuitBreaker:
+    def __init__(self, retries: int = 3):
+        self.retries = retries
 
-    def process_batch(self, raw_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return [
-            {
-                "symbol": self.sanitize_ticker(d.get("s", "UNKNOWN")),
-                "price": float(d.get("p", 0.0)),
-                "timestamp": datetime.fromtimestamp(d.get("t", 0) / 1000).isoformat(),
-                "source": "crypto-tracker-23"
-            }
-            for d in raw_data
-            if "p" in d
-        ]
+    def __call__(self, func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs) -> Any:
+            attempts = 0
+            while attempts < self.retries:
+                try:
+                    return func(*args, **kwargs)
+                except ConnectionError as e:
+                    attempts += 1
+                    logger.warning(f"network instability detected: {e}")
+                    if attempts == self.retries:
+                        raise ConnectionError("max retries reached for provider")
+                except Exception as e:
+                    logger.error(f"catastrophic failure in {func.__name__}: {str(e)}")
+                    return None
+        return wrapper
 
-def calculate_volatility(prices: List[float]) -> float:
-    """Calculate basic price variance for crypto assets."""
-    if len(prices) < 2:
-        return 0.0
-    mean = sum(prices) / len(prices)
-    variance = sum((x - mean) ** 2 for x in prices) / len(prices)
-    return variance ** 0.5
-
-def format_crypto_amount(value: float, precision: int = 8) -> str:
-    """Custom formatter for crypto precision handling."""
-    template = "{:.%df}" % precision
-    return template.format(value).rstrip('0').rstrip('.') or '0'
+def safe_request(func: Callable) -> Callable:
+    @wraps(func)
+    def packet_check(*args, **kwargs):
+        result = func(*args, **kwargs)
+        if result is None:
+            return {'status': 'err', 'payload': {}}
+        return {'status': 'ok', 'data': result}
+    return packet_check
