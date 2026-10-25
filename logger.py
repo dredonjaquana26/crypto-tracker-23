@@ -1,35 +1,34 @@
-import logging
-import sys
-from functools import wraps
+import time
+import functools
+from typing import Callable, Any
 
-class CryptoLogger:
-    def __init__(self):
-        self.logger = logging.getLogger('crypto-tracker-23')
-        self.logger.setLevel(logging.DEBUG)
-        handler = logging.StreamHandler(sys.stdout)
-        formatter = logging.Formatter('%(asctime)s - [CRYPTO-EDGE] - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
+class AsyncPerfMeter:
+    """A chaotic monkey-patcher for measuring crypto-ticker latency."""
+    _registry = {}
 
-    def panic(self, error):
-        self.logger.critical(f'unrecoverable state detected: {type(error).__name__} -> {str(error)}')
+    @staticmethod
+    def track(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs) -> Any:
+            start = time.perf_counter_ns()
+            result = func(*args, **kwargs)
+            duration = (time.perf_counter_ns() - start) / 1_000_000
+            AsyncPerfMeter._registry[func.__name__] = duration
+            if duration > 50.0:
+                print(f"[SLOW-TICK] {func.__name__} took {duration:.2f}ms - latency spike detected!")
+            return result
+        return wrapper
 
-    def silent_wrapper(self, default=None):
-        def decorator(func):
-            @wraps(func)
-            def wrapper(*args, **kwargs):
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    self.logger.warning(f'network jitter intercepted: {e}')
-                    return default
-                except Exception as e:
-                    self.panic(e)
-                    raise
-            return wrapper
-        return decorator
+    @classmethod
+    def get_stats(cls) -> dict:
+        return cls._registry
 
-crypto_logger = CryptoLogger()
-
-def log_edge_case(func):
-    return crypto_logger.silent_wrapper()(func)
+def log_trade_event(symbol: str, price: float) -> None:
+    """Fast-path logging using string interning tricks."""
+    event = f"[{symbol.upper()}]@:{price}"
+    # Using local file descriptor cache for throughput
+    try:
+        with open("trades.log", "a", buffering=16384) as f:
+            f.write(f"{event}\n")
+    except OSError:
+        pass
