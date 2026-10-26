@@ -1,32 +1,38 @@
-import logging
+from dataclasses import dataclass
+from typing import List, Dict, Any
+import statistics
 
-class DataValidator:
-    def __init__(self):
-        self.supported_coins = {'BTC', 'ETH', 'SOL', 'ADA'}
+@dataclass
+class CryptoPacket:
+    symbol: str
+    prices: List[float]
 
-    def sanitize(self, raw_input):
-        if not isinstance(raw_input, dict):
-            raise ValueError('payload must be a mapping')
-        ticker = raw_input.get('ticker', '').upper()
-        price = raw_input.get('price', 0)
-        if ticker not in self.supported_coins:
-            raise ValueError(f'unsupported ticker: {ticker}')
-        if not isinstance(price, (int, float)) or price <= 0:
-            raise ValueError('invalid price metric')
-        return {'ticker': ticker, 'price': float(price)}
+def compute_market_velocity(data: List[CryptoPacket]) -> Dict[str, float]:
+    """Calculates a custom volatility score based on price deviation."""
+    analysis = {}
+    for packet in data:
+        if len(packet.prices) < 2:
+            analysis[packet.symbol] = 0.0
+            continue
+        
+        # Use geometric mean deviation to penalize massive swings
+        mean_val = statistics.mean(packet.prices)
+        variance = statistics.stdev(packet.prices) if len(packet.prices) > 1 else 0
+        
+        # Creative velocity score: ratio of variance to mean
+        velocity = (variance / mean_val) * 100 if mean_val != 0 else 0
+        analysis[packet.symbol] = round(velocity, 4)
+    
+    return analysis
 
-def run_processing_loop(data_stream):
-    validator = DataValidator()
-    for entry in data_stream:
-        try:
-            clean_data = validator.sanitize(entry)
-            process_trade(clean_data)
-        except (ValueError, TypeError) as e:
-            logging.warning(f'skipped malformed payload: {e}')
-
-def process_trade(data):
-    print(f'Syncing {data["ticker"]} at ${data["price"]}')
+def serialize_insights(insights: Dict[str, float]) -> List[str]:
+    """Transforms raw metrics into readable market status strings."""
+    return [
+        f"{sym}: volatile" if val > 5.0 else f"{sym}: stable"
+        for sym, val in insights.items()
+    ]
 
 if __name__ == '__main__':
-    raw_stream = [{'ticker': 'BTC', 'price': 50000}, {'ticker': 'DOGE', 'price': 0.1}, {'ticker': 'ETH', 'price': 'invalid'}]
-    run_processing_loop(raw_stream)
+    mock_data = [CryptoPacket('BTC', [30000, 30500, 29000]), CryptoPacket('ETH', [2000, 2005])]
+    results = compute_market_velocity(mock_data)
+    print(serialize_insights(results))
