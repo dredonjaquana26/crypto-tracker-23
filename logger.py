@@ -1,34 +1,33 @@
-import time
-import functools
-from typing import Callable, Any
+import logging
+from logging.handlers import RotatingFileHandler
+import sys
+import os
 
-class AsyncPerfMeter:
-    """A chaotic monkey-patcher for measuring crypto-ticker latency."""
-    _registry = {}
+def get_crypto_logger(name='crypto-tracker-23', log_file='market_data.log'):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
 
-    @staticmethod
-    def track(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
-            start = time.perf_counter_ns()
-            result = func(*args, **kwargs)
-            duration = (time.perf_counter_ns() - start) / 1_000_000
-            AsyncPerfMeter._registry[func.__name__] = duration
-            if duration > 50.0:
-                print(f"[SLOW-TICK] {func.__name__} took {duration:.2f}ms - latency spike detected!")
-            return result
-        return wrapper
+    formatter = logging.Formatter(
+        '[%(asctime)s] [%(levelname)s] [%(name)s] >> %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
-    @classmethod
-    def get_stats(cls) -> dict:
-        return cls._registry
+    # rotating handler: max 5mb per file, keep 3 backups
+    handler = RotatingFileHandler(
+        log_file, 
+        maxBytes=5 * 1024 * 1024, 
+        backupCount=3
+    )
+    handler.setFormatter(formatter)
 
-def log_trade_event(symbol: str, price: float) -> None:
-    """Fast-path logging using string interning tricks."""
-    event = f"[{symbol.upper()}]@:{price}"
-    # Using local file descriptor cache for throughput
-    try:
-        with open("trades.log", "a", buffering=16384) as f:
-            f.write(f"{event}\n")
-    except OSError:
-        pass
+    console = logging.StreamHandler(sys.stdout)
+    console.setFormatter(formatter)
+
+    if not logger.handlers:
+        logger.addHandler(handler)
+        logger.addHandler(console)
+
+    return logger
+
+# global tracker logger instance
+crypto_logger = get_crypto_logger()
