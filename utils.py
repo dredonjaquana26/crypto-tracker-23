@@ -1,35 +1,40 @@
-import logging
-from functools import wraps
+import time
+import functools
 from typing import Callable, Any
 
-logger = logging.getLogger('crypto-tracker-23')
-
-class CryptoCircuitBreaker:
-    def __init__(self, retries: int = 3):
-        self.retries = retries
-
-    def __call__(self, func: Callable) -> Callable:
-        @wraps(func)
+def rate_limited(max_per_second: int) -> Callable:
+    min_interval = 1.0 / float(max_per_second)
+    def decorator(func: Callable) -> Callable:
+        last_called = [0.0]
+        @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
-            attempts = 0
-            while attempts < self.retries:
-                try:
-                    return func(*args, **kwargs)
-                except ConnectionError as e:
-                    attempts += 1
-                    logger.warning(f"network instability detected: {e}")
-                    if attempts == self.retries:
-                        raise ConnectionError("max retries reached for provider")
-                except Exception as e:
-                    logger.error(f"catastrophic failure in {func.__name__}: {str(e)}")
-                    return None
+            elapsed = time.perf_counter() - last_called[0]
+            left_to_wait = min_interval - elapsed
+            if left_to_wait > 0:
+                time.sleep(left_to_wait)
+            ret = func(*args, **kwargs)
+            last_called[0] = time.perf_counter()
+            return ret
         return wrapper
+    return decorator
 
-def safe_request(func: Callable) -> Callable:
-    @wraps(func)
-    def packet_check(*args, **kwargs):
-        result = func(*args, **kwargs)
-        if result is None:
-            return {'status': 'err', 'payload': {}}
-        return {'status': 'ok', 'data': result}
-    return packet_check
+def safe_crypto_cast(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(str(value).replace(',', ''))
+    except (ValueError, TypeError):
+        return default
+
+def memoize_crypto_price(ttl_seconds: int = 60) -> Callable:
+    cache = {}
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args) -> Any:
+            key = str(args)
+            now = time.time()
+            if key in cache and (now - cache[key]['ts']) < ttl_seconds:
+                return cache[key]['val']
+            res = func(*args)
+            cache[key] = {'val': res, 'ts': now}
+            return res
+        return wrapper
+    return decorator
