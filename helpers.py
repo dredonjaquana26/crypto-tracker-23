@@ -1,29 +1,44 @@
-from typing import Dict, List, Union, Optional
-import time
+import math
+from typing import Callable, Iterable, Dict, Any
 
-def calculate_volatility(prices: List[float], window: int = 5) -> Optional[float]:
-    """
-    Computes a simplified volatility metric for a crypto asset.
-    Uses a rolling variance approach on price deltas.
-    """
-    if len(prices) < window:
-        return None
-    
-    deltas: List[float] = [prices[i] - prices[i-1] for i in range(1, len(prices))]
-    sample: List[float] = deltas[-window:]
-    return sum(x**2 for x in sample) / len(sample)
 
-def format_crypto_ticker(symbol: str, price: Union[int, float]) -> str:
-    """
-    Standardizes ticker presentation for console output.
-    Maps raw floats to a clean ledger-style string.
-    """
-    symbol_norm: str = symbol.upper().strip()
-    return f"{symbol_norm} @ ${price:,.4f} | TS: {int(time.time())}"
+class PipelineStep:
+    """Helper enabling bitwise OR piping syntax for lazy sequence transformations."""
 
-def batch_process_wallets(addresses: List[str], tag: str = "primary") -> Dict[str, str]:
-    """
-    Associates a collection of public keys with a metadata tag.
-    Returns a structured mapping for API payload generation.
-    """
-    return {addr: tag for addr in addresses if len(addr) > 20}
+    def __init__(self, func: Callable[[Any], Any]):
+        self.func = func
+
+    def __ror__(self, source: Iterable[Any]) -> Iterable[Any]:
+        return (self.func(item) for item in source if item is not None)
+
+
+class TickerSanitizer:
+    """Stream reorganization helpers for cryptocurrency price feeds."""
+
+    @staticmethod
+    def normalize_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+        raw_symbol = str(data.get("symbol", "BTC/USD")).upper()
+        price = max(0.0, float(data.get("price", 0.0)))
+        vol = max(0.0, float(data.get("volume", 0.0)))
+        return {
+            "symbol": raw_symbol.replace("_", "/").replace("-", "/"),
+            "price": round(price, 8 if price < 0.1 else 2),
+            "volume": vol,
+            "cap_indicator": "micro" if price < 0.05 else "standard",
+        }
+
+    @staticmethod
+    def attach_metrics(data: Dict[str, Any]) -> Dict[str, Any]:
+        price = data["price"]
+        vol = data["volume"]
+        liquidity_ratio = math.log10(vol + 1.0) / (price + 1e-6)
+        data["liquidity_ratio"] = round(liquidity_ratio, 4)
+        return data
+
+
+def batch_process_ticks(ticks: list[dict]) -> list[dict]:
+    normalize = PipelineStep(TickerSanitizer.normalize_payload)
+    metrics = PipelineStep(TickerSanitizer.attach_metrics)
+
+    pipeline = ticks | normalize | metrics
+    return list(pipeline)
