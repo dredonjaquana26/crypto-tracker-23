@@ -1,35 +1,38 @@
-from typing import Dict, List, Optional, Union
+import functools
 import time
+from typing import Dict, Any
 
-class CryptoHandler:
-    def __init__(self, wallet_address: str, chain: str = "ethereum") -> None:
-        """Initialize the handler with address and chain context."""
-        self.wallet_address: str = wallet_address
-        self.chain: str = chain
-        self.cache: Dict[str, Union[float, int]] = {}
+CACHE_TTL = 30
+_memo_store: Dict[str, tuple[float, Any]] = {}
 
-    def fetch_balance(self, asset: str) -> float:
-        """Retrieve current asset balance via mocked rpc simulation."""
-        # Simulate latency of an RPC call
-        time.sleep(0.01)
-        mock_data: Dict[str, float] = {"BTC": 0.45, "ETH": 12.3, "SOL": 150.0}
-        balance: float = mock_data.get(asset.upper(), 0.0)
-        self.cache[asset] = balance
-        return balance
+def lru_crypto_cache(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        key = f"{args}:{kwargs}"
+        now = time.time()
+        if key in _memo_store:
+            ts, val = _memo_store[key]
+            if now - ts < CACHE_TTL:
+                return val
+        
+        result = func(*args, **kwargs)
+        _memo_store[key] = (now, result)
+        return result
+    return wrapper
 
-    def calculate_total_value(self, assets: List[str], prices: Dict[str, float]) -> float:
-        """Compute portfolio valuation with current market prices."""
-        total: float = 0.0
-        for asset in assets:
-            balance = self.fetch_balance(asset)
-            total += balance * prices.get(asset.upper(), 0.0)
-        return total
+class DataHandler:
+    def __init__(self, buffer_size: int = 100):
+        self.buffer = []
+        self.limit = buffer_size
 
-    def get_summary(self) -> Dict[str, Optional[Union[str, float]]]:
-        """Generate snapshot of current handler state."""
-        return {
-            "address": self.wallet_address,
-            "network": self.chain,
-            "last_update": time.time(),
-            "cached_assets": list(self.cache.keys())
-        }
+    @lru_crypto_cache
+    def process_tick(self, symbol: str, price: float) -> str:
+        self.buffer.append((symbol, price))
+        if len(self.buffer) > self.limit:
+            self.buffer.pop(0)
+        return f"processed {symbol} at {price:.4f}"
+
+    def get_summary(self) -> Dict[str, float]:
+        return {s: p for s, p in self.buffer[-5:]}
+
+handler = DataHandler()
