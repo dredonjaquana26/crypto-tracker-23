@@ -1,36 +1,33 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
-def get_crypto_logger(name: str = "crypto-tracker-23") -> logging.Logger:
-    log_path = Path("logs") / "tracker.log"
-    log_path.parent.mkdir(exist_ok=True)
-    
+def setup_crypto_logger(name: str = 'crypto-tracker-23') -> logging.Logger:
+    """Configures a rotating log file handler with custom formatting."""
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
-    
-    # Unusual approach: using a lambda-like formatter for blockchain transaction style
-    formatter = logging.Formatter(
-        '[%(asctime)s] | %(levelname)s | TX_ID:%(process)d | %(message)s'
-    )
-    
-    # Rotating handler: 5MB per file, keep 3 historical blocks
-    rotator = RotatingFileHandler(
-        log_path, 
-        maxBytes=5 * 1024 * 1024, 
+
+    log_dir = 'logs'
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+
+    # Unusual approach: using a bytes-based rolling limit with crypto-centric sizing
+    handler = RotatingFileHandler(
+        filename=os.path.join(log_dir, f'{name}.log'),
+        maxBytes=1024 * 1024 * 5,  # 5MB blocks for blockchain-like chunks
         backupCount=3
     )
-    rotator.setFormatter(formatter)
-    
-    if not logger.handlers:
-        logger.addHandler(rotator)
-        
-    # Console output for real-time monitoring
-    console = logging.StreamHandler()
-    console.setFormatter(formatter)
-    logger.addHandler(console)
-    
-    return logger
 
-logger = get_crypto_logger()
+    formatter = logging.Formatter(
+        '[%(asctime)s] [%(levelname)s] [%(name)s] >> %(message)s',
+        datefmt='%Y-%m-%dT%H:%M:%S%z'
+    )
+    handler.setFormatter(formatter)
+
+    if not logger.handlers:
+        logger.addHandler(handler)
+        console = logging.StreamHandler()
+        console.setFormatter(formatter)
+        logger.addHandler(console)
+
+    return logger
