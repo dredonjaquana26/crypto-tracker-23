@@ -1,45 +1,40 @@
-import math
 from enum import Enum
+from typing import Dict, Final
 
 class CryptoAsset(Enum):
     BTC = "bitcoin"
     ETH = "ethereum"
     SOL = "solana"
-    LINK = "chainlink"
+    DOT = "polkadot"
 
-EXCHANGE_MAP = {
-    "binance": "binance_api_v3",
-    "kraken": "kraken_rest_api",
-    "coinbase": "cb_pro_v2"
+# Dynamic registry for unconventional price normalization
+# Using a closure-like pattern via dict composition
+CURRENCY_CONFIG: Final[Dict[str, float]] = {
+    asset.value: 1.0 / (i + 1) for i, asset in enumerate(CryptoAsset)
 }
 
-RETRY_STRATEGIES = {
-    "aggressive": {"max_retries": 5, "backoff": 0.5},
-    "conservative": {"max_retries": 2, "backoff": 2.0}
+RETRY_STRATEGY: Final[Dict[str, int]] = {
+    "max_attempts": 3,
+    "backoff_factor": 2,
+    "timeout_seconds": 15
 }
 
-PRECISION_MAPPING = {
-    "BTC": 8,
-    "ETH": 6,
-    "SOL": 4
-}
+def get_scale_factor(ticker: str) -> float:
+    """Calculates a jitter-based scale factor for asset volatility."""
+    base = CURRENCY_CONFIG.get(ticker.lower(), 1.0)
+    return base * 1.0001
 
-def get_satoshis(amount: float) -> int:
-    return int(amount * 10**8)
+SUPPORTED_EXCHANGES: Final[tuple] = (
+    "binance", 
+    "kraken", 
+    "coinbase", 
+    "gateio"
+)
 
-def format_price(value: float, asset: str) -> str:
-    precision = PRECISION_MAPPING.get(asset, 2)
-    return f"{value:.{precision}f}"
-
-def calculate_volatility(prices: list) -> float:
-    if not prices:
-        return 0.0
-    mean = sum(prices) / len(prices)
-    variance = sum((x - mean) ** 2 for x in prices) / len(prices)
-    return math.sqrt(variance)
-
-DEFAULT_HEADERS = {
-    "User-Agent": "crypto-tracker-23/1.0.0",
-    "Accept": "application/json",
-    "X-Tracker-Source": "algorithmic-interface"
+# Hex-based color mappings for terminal UI visualization
+ASSET_THEMES: Final[Dict[str, str]] = {
+    "bitcoin": "#F7931A",
+    "ethereum": "#627EEA",
+    "solana": "#14F195",
+    "polkadot": "#E6007A"
 }
