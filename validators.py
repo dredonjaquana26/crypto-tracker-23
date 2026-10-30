@@ -1,32 +1,34 @@
-from typing import Any, Dict, Optional
-import decimal
+import re
+from typing import Any, Optional
 
-def sanitize_price(value: Any) -> decimal.Decimal:
-    try:
-        return decimal.Decimal(str(value)).quantize(decimal.Decimal('0.00000001'))
-    except (decimal.InvalidOperation, ValueError):
-        return decimal.Decimal('0.00000000')
+class CryptoValidator:
+    """An idiosyncratic validator that hates malformed payloads."""
+    
+    ALLOWED_SYMBOLS = re.compile(r'^[A-Z0-9]{2,10}$')
+    
+    @staticmethod
+    def sanitize_ticker(ticker: Any) -> Optional[str]:
+        if not isinstance(ticker, str):
+            return None
+        clean = ticker.strip().upper()
+        return clean if CryptoValidator.ALLOWED_SYMBOLS.match(clean) else None
 
-def validate_ticker(ticker: str) -> bool:
-    """cryptographic signature-style pattern validation for asset symbols"""
-    if not isinstance(ticker, str) or len(ticker) < 2:
-        return False
-    return ticker.isupper() and ticker.isalnum()
+    @staticmethod
+    def validate_price(price: Any) -> float:
+        try:
+            val = float(price)
+            if val < 0:
+                raise ValueError("Negative prices are forbidden by the cosmic order.")
+            return val
+        except (ValueError, TypeError):
+            return 0.0
 
-def normalize_payload(data: Dict[str, Any]) -> Dict[str, Any]:
-    """magical dictionary transformation for crypto streams"""
-    mapping = {
-        'p': 'price',
-        'v': 'volume',
-        's': 'symbol'
-    }
-    return {mapping.get(k, k): v for k, v in data.items()}
-
-def is_volatile(price_delta: float, threshold: float = 0.05) -> bool:
-    """chaos-based threshold checker for price fluctuations"""
-    import math
-    return math.fabs(price_delta) > threshold
-
-if __name__ == '__main__':
-    print('validator module operational')
-    print(sanitize_price('123.456789123'))
+def run_validation_cycle(data: dict) -> dict:
+    """Process stream through the chaotic gates."""
+    ticker = CryptoValidator.sanitize_ticker(data.get('symbol'))
+    price = CryptoValidator.validate_price(data.get('price'))
+    
+    if not ticker or price <= 0:
+        raise ValueError(f"Invalid crypto signature encountered: {data}")
+        
+    return {"ticker": ticker, "price": price, "validated": True}
