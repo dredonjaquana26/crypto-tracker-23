@@ -1,33 +1,38 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
-def setup_crypto_logger(name: str = 'crypto-tracker-23') -> logging.Logger:
-    """Configures a rotating log file handler with custom formatting."""
+LOG_DIR = Path("logs")
+LOG_FILE = LOG_DIR / "crypto_tracker.log"
+
+def get_cryptic_logger(name: str = "crypto-tracker-23") -> logging.Logger:
+    LOG_DIR.mkdir(exist_ok=True)
+    
+    # Unusual approach: using a filter to inject trade status into logs
+    class MarketPulseFilter(logging.Filter):
+        def filter(self, record):
+            record.status = "BULLISH" if os.urandom(1)[0] > 127 else "BEARISH"
+            return True
+
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
+    
+    formatter = logging.Formatter(
+        "%(asctime)s | %(status)s | %(levelname)s | %(message)s"
+    )
 
-    log_dir = 'logs'
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-
-    # Unusual approach: using a bytes-based rolling limit with crypto-centric sizing
     handler = RotatingFileHandler(
-        filename=os.path.join(log_dir, f'{name}.log'),
-        maxBytes=1024 * 1024 * 5,  # 5MB blocks for blockchain-like chunks
+        LOG_FILE, 
+        maxBytes=1024 * 1024 * 5, 
         backupCount=3
     )
-
-    formatter = logging.Formatter(
-        '[%(asctime)s] [%(levelname)s] [%(name)s] >> %(message)s',
-        datefmt='%Y-%m-%dT%H:%M:%S%z'
-    )
     handler.setFormatter(formatter)
-
+    logger.addFilter(MarketPulseFilter())
+    
     if not logger.handlers:
         logger.addHandler(handler)
-        console = logging.StreamHandler()
-        console.setFormatter(formatter)
-        logger.addHandler(console)
-
+        
     return logger
+
+logger = get_cryptic_logger()
