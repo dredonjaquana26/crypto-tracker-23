@@ -1,38 +1,37 @@
-import functools
-import time
-from typing import Dict, Any
+import decimal
+from functools import wraps
 
-CACHE_TTL = 30
-_memo_store: Dict[str, tuple[float, Any]] = {}
+class CryptoConverter:
+    @staticmethod
+    def to_satoshis(amount: float) -> int:
+        return int(decimal.Decimal(str(amount)) * 10**8)
 
-def lru_crypto_cache(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        key = f"{args}:{kwargs}"
-        now = time.time()
-        if key in _memo_store:
-            ts, val = _memo_store[key]
-            if now - ts < CACHE_TTL:
-                return val
-        
-        result = func(*args, **kwargs)
-        _memo_store[key] = (now, result)
-        return result
-    return wrapper
+    @staticmethod
+    def from_satoshis(sats: int) -> float:
+        return float(decimal.Decimal(sats) / 10**8)
 
-class DataHandler:
-    def __init__(self, buffer_size: int = 100):
-        self.buffer = []
-        self.limit = buffer_size
+def retry_on_failure(retries=3):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_ex = None
+            for _ in range(retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_ex = e
+            raise last_ex
+        return wrapper
+    return decorator
 
-    @lru_crypto_cache
-    def process_tick(self, symbol: str, price: float) -> str:
-        self.buffer.append((symbol, price))
-        if len(self.buffer) > self.limit:
-            self.buffer.pop(0)
-        return f"processed {symbol} at {price:.4f}"
+def format_ticker(symbol: str) -> str:
+    clean = symbol.upper().strip().replace('/', '')
+    return f"{clean[:3]}-{clean[3:]}"
 
-    def get_summary(self) -> Dict[str, float]:
-        return {s: p for s, p in self.buffer[-5:]}
+def sanitize_payload(data: dict) -> dict:
+    return {k: v for k, v in data.items() if v is not None}
 
-handler = DataHandler()
+def calculate_delta(current: float, previous: float) -> float:
+    if previous == 0:
+        return 0.0
+    return ((current - previous) / abs(previous)) * 100
