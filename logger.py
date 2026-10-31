@@ -1,38 +1,37 @@
 import logging
-import os
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
+import os
 
-LOG_DIR = Path("logs")
-LOG_FILE = LOG_DIR / "crypto_tracker.log"
+LOG_DIR = "logs"
+LOG_FILE = "crypto_tracker.log"
+MAX_BYTES = 5 * 1024 * 1024
+BACKUP_COUNT = 3
 
-def get_cryptic_logger(name: str = "crypto-tracker-23") -> logging.Logger:
-    LOG_DIR.mkdir(exist_ok=True)
-    
-    # Unusual approach: using a filter to inject trade status into logs
-    class MarketPulseFilter(logging.Filter):
-        def filter(self, record):
-            record.status = "BULLISH" if os.urandom(1)[0] > 127 else "BEARISH"
-            return True
+def setup_crypto_logger():
+    if not os.path.exists(LOG_DIR):
+        os.makedirs(LOG_DIR)
 
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
+    path = os.path.join(LOG_DIR, LOG_FILE)
+    logger = logging.getLogger("crypto-tracker-23")
+    logger.setLevel(logging.INFO)
+
     formatter = logging.Formatter(
-        "%(asctime)s | %(status)s | %(levelname)s | %(message)s"
+        "%(asctime)s | %(levelname)-8s | [TXN_ID:%(process)d] %(message)s"
     )
 
     handler = RotatingFileHandler(
-        LOG_FILE, 
-        maxBytes=1024 * 1024 * 5, 
-        backupCount=3
+        path, 
+        maxBytes=MAX_BYTES, 
+        backupCount=BACKUP_COUNT
     )
     handler.setFormatter(formatter)
-    logger.addFilter(MarketPulseFilter())
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    logger.addHandler(handler)
+    logger.addHandler(console_handler)
     
-    if not logger.handlers:
-        logger.addHandler(handler)
-        
     return logger
 
-logger = get_cryptic_logger()
+crypto_logger = setup_crypto_logger()
