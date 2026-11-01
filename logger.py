@@ -1,37 +1,35 @@
 import logging
-from logging.handlers import RotatingFileHandler
-import os
+import sys
+from typing import Any, Optional
 
-LOG_DIR = "logs"
-LOG_FILE = "crypto_tracker.log"
-MAX_BYTES = 5 * 1024 * 1024
-BACKUP_COUNT = 3
+class CryptoLogger:
+    """Custom logger for crypto-tracker-23 transactions and events."""
 
-def setup_crypto_logger():
-    if not os.path.exists(LOG_DIR):
-        os.makedirs(LOG_DIR)
+    def __init__(self, name: str = "crypto_tracker") -> None:
+        self.logger: logging.Logger = logging.getLogger(name)
+        self._setup_stream()
 
-    path = os.path.join(LOG_DIR, LOG_FILE)
-    logger = logging.getLogger("crypto-tracker-23")
-    logger.setLevel(logging.INFO)
+    def _setup_stream(self) -> None:
+        """Configure console output with a minimalist style."""
+        handler: logging.StreamHandler = logging.StreamHandler(sys.stdout)
+        formatter: logging.Formatter = logging.Formatter(
+            "[%(asctime)s] %(levelname)s | %(message)s", 
+            datefmt="%H:%M:%S"
+        )
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
+        self.logger.setLevel(logging.INFO)
 
-    formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)-8s | [TXN_ID:%(process)d] %(message)s"
-    )
+    def log_trade(self, pair: str, price: float, side: str) -> None:
+        """Log a trade event with side identification."""
+        icon: str = "🚀" if side == "buy" else "🔻"
+        self.logger.info(f"{icon} {pair.upper()} execution at {price:.2f}")
 
-    handler = RotatingFileHandler(
-        path, 
-        maxBytes=MAX_BYTES, 
-        backupCount=BACKUP_COUNT
-    )
-    handler.setFormatter(formatter)
+    def log_error(self, message: str, exc: Optional[Exception] = None) -> None:
+        """Log system errors with optional exception traceback."""
+        if exc:
+            self.logger.error(f"🚨 {message}: {type(exc).__name__}")
+        else:
+            self.logger.error(f"🚨 {message}")
 
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-
-    logger.addHandler(handler)
-    logger.addHandler(console_handler)
-    
-    return logger
-
-crypto_logger = setup_crypto_logger()
+logger_instance: CryptoLogger = CryptoLogger()
