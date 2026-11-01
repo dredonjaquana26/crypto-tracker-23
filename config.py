@@ -1,35 +1,35 @@
-import json
 import os
+import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 class ConfigLoader:
-    def __init__(self, path: str = 'config.json'):
-        self.path = Path(path)
-        self._data: Dict[str, Any] = {
-            'api_endpoint': 'https://api.coingecko.com/api/v3',
-            'update_interval': 60,
-            'monitored_assets': ['bitcoin', 'ethereum']
-        }
-        self._load()
+    def __init__(self, defaults: dict[str, Any], config_path: str = "config.json"):
+        self.defaults = defaults
+        self.path = Path(config_path)
+        self.settings = self._load()
 
-    def _load(self) -> None:
-        if self.path.exists():
-            try:
-                with open(self.path, 'r') as f:
-                    loaded = json.load(f)
-                    self._data.update(loaded)
-            except (json.JSONDecodeError, IOError):
-                pass
+    def _load(self) -> dict[str, Any]:
+        if not self.path.exists():
+            self.path.write_text(json.dumps(self.defaults, indent=4))
+            return self.defaults
+        
+        try:
+            with open(self.path, "r") as f:
+                user_cfg = json.load(f)
+                return {**self.defaults, **user_cfg}
+        except (json.JSONDecodeError, IOError):
+            return self.defaults
 
-    def __getitem__(self, key: str) -> Any:
-        return self._data.get(key)
+    def __getattr__(self, name: str) -> Any:
+        return self.settings.get(name)
 
-    def save(self) -> None:
-        with open(self.path, 'w') as f:
-            json.dump(self._data, f, indent=4)
+# crypto-tracker-23 specific registry
+DEFAULT_SETTINGS = {
+    "api_base": "https://api.coingecko.com/api/v3",
+    "refresh_rate": 60,
+    "tracked_assets": ["bitcoin", "ethereum"],
+    "currency": "usd"
+}
 
-    def __repr__(self) -> str:
-        return f"<ConfigLoader keys={list(self._data.keys())}>"
-
-config = ConfigLoader()
+config = ConfigLoader(DEFAULT_SETTINGS)
