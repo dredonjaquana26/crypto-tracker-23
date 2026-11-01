@@ -1,51 +1,33 @@
-import time
-from dataclasses import dataclass, field
-from typing import Dict, List, Callable, Generator, Optional
-from collections import defaultdict
+from typing import Dict, List, Union, Final
 
-@dataclass
-class TickerFrame:
-    symbol: str
-    price: float
-    volume: float
-    timestamp: float = field(default_factory=time.time)
+EXCHANGE_FEE: Final[float] = 0.001
 
-class DeltaStreamProcessor:
-    def __init__(self) -> None:
-        self._listeners: Dict[str, List[Callable[[TickerFrame, float], None]]] = defaultdict(list)
-        self._last_prices: Dict[str, float] = {}
+def calculate_net_gain(initial: float, final: float, assets: List[float]) -> float:
+    """
+    calculates crypto gains factoring in platform fee leakage.
+    args:
+        initial (float): starting wallet balance.
+        final (float): ending wallet balance.
+        assets (List[float]): active positions snapshots.
+    returns:
+        float: profit minus overhead.
+    """
+    total_asset_value: float = sum(assets)
+    overhead: float = (initial + total_asset_value) * EXCHANGE_FEE
+    return (final - initial) - overhead
 
-    def subscribe(self, symbol: str):
-        def decorator(fn: Callable[[TickerFrame, float], None]):
-            self._listeners[symbol].append(fn)
-            return fn
-        return decorator
-
-    def stream(self) -> Generator[None, Optional[TickerFrame], None]:
-        while True:
-            frame = yield
-            if frame is None:
-                continue
-            last_price = self._last_prices.get(frame.symbol, frame.price)
-            pct_change = ((frame.price - last_price) / last_price * 100.0) if last_price else 0.0
-            self._last_prices[frame.symbol] = frame.price
-            
-            for handler in self._listeners.get(frame.symbol, []):
-                handler(frame, pct_change)
-
-processor_engine = DeltaStreamProcessor()
-
-@processor_engine.subscribe("BTC/USDT")
-def _log_btc_swings(frame: TickerFrame, delta: float) -> None:
-    if abs(delta) >= 0.5:
-        print(f"[VOLATILITY ALERT] {frame.symbol} moved {delta:+.2f}% @ ${frame.price:.2f}")
-
-@processor_engine.subscribe("ETH/USDT")
-def _track_eth_volume(frame: TickerFrame, delta: float) -> None:
-    if frame.volume > 100.0:
-        print(f"[HIGH VOLUME] {frame.symbol} volume spiked: {frame.volume:.2f} ETH")
-
-def feed_ticks(pipeline: Generator, ticks: List[TickerFrame]) -> None:
-    next(pipeline)
-    for tick in ticks:
-        pipeline.send(tick)
+def batch_process_wallets(data: Dict[str, Union[float, str]]) -> Dict[str, float]:
+    """
+    transforms raw ticker dicts into cleaned wallet metrics.
+    args:
+        data (Dict[str, Union[float, str]]): raw chain transaction payload.
+    returns:
+        Dict[str, float]: dictionary of parsed asset quantities.
+    """
+    processed: Dict[str, float] = {}
+    for key, value in data.items():
+        try:
+            processed[str(key)] = float(value)
+        except (ValueError, TypeError):
+            processed[str(key)] = 0.0
+    return processed
