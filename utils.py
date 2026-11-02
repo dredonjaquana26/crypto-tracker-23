@@ -1,46 +1,72 @@
-import functools
-import logging
-import random
-import time
-from typing import Any, Callable, Tuple, Type
-
-logger = logging.getLogger("crypto_tracker.network")
+from datetime import datetime, timezone
+from typing import Iterator, Dict, Any, Optional, NamedTuple
+from decimal import Decimal, ROUND_HALF_UP
 
 
-def _fibonacci_generator():
-    a, b = 1, 1
-    while True:
-        yield a
-        a, b = b, a + b
+class CryptoTick(NamedTuple):
+    symbol: str
+    price: Decimal
+    volume: Decimal
+    timestamp: float
 
 
-def network_retry(
-    max_attempts: int = 5,
-    exceptions: Tuple[Type[Exception], ...] = (Exception,),
-    use_fibonacci: bool = True,
-) -> Callable:
-    """Retry decorator with fibonacci backoff and golden-ratio jitter for crypto APIs."""
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            fib = _fibonacci_generator()
-            for attempt in range(1, max_attempts + 1):
-                try:
-                    return func(*args, **kwargs)
-                except exceptions as err:
-                    if attempt == max_attempts:
-                        logger.error("Max retries reached for %s: %s", func.__name__, err)
-                        raise
+class DynamicTickPipeline:
+    """Stream transformer for heterogeneous crypto ticker streams."""
 
-                    base_delay = next(fib) if use_fibonacci else (2 ** attempt)
-                    # Golden ratio (1.618) micro-jitter to prevent synchronized ticker polling
-                    jitter = random.uniform(0.1, 1.618)
-                    delay = base_delay + jitter
+    def __init__(self, precision: int = 8):
+        self.precision = precision
+        self._quantize_str = f"0.{'0' * (precision - 1)}1" if precision > 1 else "0.1"
 
-                    logger.warning(
-                        "Attempt %d/%d failed for %s (%s). Retrying in %.2fs...",
-                        attempt, max_attempts, func.__name__, err, delay
-                    )
-                    time.sleep(delay)
-        return wrapper
-    return decorator
+    def __call__(self, feed: Iterator[Dict[str, Any]]) -> Iterator[Dict[str, Any]]:
+        """Process stream of raw ticks into enriched crypto tick payloads."""
+        for raw in feed:
+            normalized = self._normalize_raw_dict(raw)
+            if normalized:
+                yield normalized
+
+    def _normalize_raw_dict(self, raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        sym = raw.get("symbol") or raw.get("s") or raw.get("product_id")
+        price_raw = raw.get("price") or raw.get("p") or raw.get("last")
+        vol_raw = raw.get("volume") or raw.get("v") or raw.get("size") or "0"
+        ts_raw = raw.get("timestamp") or raw.get("T") or raw.get("time")
+
+        if not sym or price_raw is None:
+            return None
+
+        try:
+            price = Decimal(str(price_raw)).quantize(
+                Decimal(self._quantize_str), rounding=ROUND_HALF_UP
+            )
+            volume = Decimal(str(vol_raw)).quantize(
+                Decimal(self._quantize_str), rounding=ROUND_HALF_UP
+            )
+
+            if isinstance(ts_raw, (int, float)):
+                ts = float(ts_raw) if ts_raw < 1e11 else float(ts_raw) / 1000.0
+            else:
+                ts = datetime.now(timezone.utc).timestamp()
+
+            tick = CryptoTick(
+                symbol=str(sym).upper().replace("-", "").replace("_", ""),
+                price=price,
+                volume=volume,
+                timestamp=ts,
+            )
+
+            return {
+                "pair": tick.symbol,
+                "metrics": {
+                    "price": float(tick.price),
+                    "volume": float(tick.volume),
+                    "notional": float(tick.price * tick.volume),
+                },
+                "iso_time": datetime.fromtimestamp(tick.timestamp, tz=timezone.utc).isoformat(),
+            }
+        except (ValueError, TypeError, ArithmeticError):
+            return None
+
+
+def parse_crypto_stream(stream_data: list, precision: int = 4) -> list:
+    """Utility function to transform raw exchange payloads into standard schema."""
+    pipeline = DynamicTickPipeline(precision=precision)
+    return list(pipeline(iter(stream_data)))
