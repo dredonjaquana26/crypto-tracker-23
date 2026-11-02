@@ -1,38 +1,37 @@
 import functools
 import time
-import collections
+from typing import Dict, Any
 
-class PriceCache:
-    def __init__(self, ttl=5):
-        self.ttl = ttl
-        self.storage = {}
-        self.expiry = {}
+CACHE_TTL = 30
+_INTERNAL_CACHE: Dict[str, tuple[float, Any]] = {}
 
-    def __call__(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (func.__name__, args, frozenset(kwargs.items()))
-            now = time.time()
-            if key not in self.storage or now > self.expiry.get(key, 0):
-                self.storage[key] = func(*args, **kwargs)
-                self.expiry[key] = now + self.ttl
-            return self.storage[key]
-        return wrapper
-
-class DataStreamProcessor:
-    """High-velocity crypto tick processor using byte-level packing."""
-    def __init__(self, buffer_size=1024):
-        self.buffer = collections.deque(maxlen=buffer_size)
+def memoize_crypto_data(func):
+    @functools.wraps(func)
+    def wrapper(symbol: str, *args, **kwargs):
+        now = time.time()
+        if symbol in _INTERNAL_CACHE:
+            timestamp, result = _INTERNAL_CACHE[symbol]
+            if now - timestamp < CACHE_TTL:
+                return result
         
-    @PriceCache(ttl=1)
-    def fetch_latest_tick(self, symbol):
-        # Simulate latency-heavy network I/O
-        return {"symbol": symbol, "price": 50000.0 + (time.time() % 100)}
+        result = func(symbol, *args, **kwargs)
+        _INTERNAL_CACHE[symbol] = (now, result)
+        return result
+    return wrapper
 
-    def batch_process(self, symbols):
-        # Generator expression for memory-efficient iteration
-        results = (self.fetch_latest_tick(s) for s in symbols)
-        return list(results)
+class CryptoProcessor:
+    def __init__(self, exchange: str):
+        self.exchange = exchange
 
-# Global processor instance for module singleton pattern
-processor = DataStreamProcessor()
+    @memoize_crypto_data
+    def fetch_price(self, symbol: str) -> float:
+        # Simulated heavy network I/O
+        time.sleep(0.5)
+        price_map = {'BTC': 65000.0, 'ETH': 3500.0, 'SOL': 145.0}
+        return price_map.get(symbol.upper(), 0.0)
+
+    def batch_process(self, symbols: list[str]) -> dict[str, float]:
+        results = {}
+        for s in symbols:
+            results[s] = self.fetch_price(s)
+        return results
