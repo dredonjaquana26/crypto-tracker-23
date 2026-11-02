@@ -1,33 +1,62 @@
-from typing import Dict, List, Union, Final
+import sys
+from typing import Any, Callable, Generator, Dict
 
-EXCHANGE_FEE: Final[float] = 0.001
+class InvalidPayloadError(Exception):
+    """Raised when a crypto payload fails validation rules."""
+    pass
 
-def calculate_net_gain(initial: float, final: float, assets: List[float]) -> float:
-    """
-    calculates crypto gains factoring in platform fee leakage.
-    args:
-        initial (float): starting wallet balance.
-        final (float): ending wallet balance.
-        assets (List[float]): active positions snapshots.
-    returns:
-        float: profit minus overhead.
-    """
-    total_asset_value: float = sum(assets)
-    overhead: float = (initial + total_asset_value) * EXCHANGE_FEE
-    return (final - initial) - overhead
+def validate_symbol(data: dict) -> dict:
+    symbol = str(data.get("symbol", "")).strip().upper()
+    if not symbol or not symbol.isalnum() or len(symbol) > 10:
+        raise InvalidPayloadError(f"Malformed ticker symbol: '{data.get('symbol')}'")
+    data["symbol"] = symbol
+    return data
 
-def batch_process_wallets(data: Dict[str, Union[float, str]]) -> Dict[str, float]:
-    """
-    transforms raw ticker dicts into cleaned wallet metrics.
-    args:
-        data (Dict[str, Union[float, str]]): raw chain transaction payload.
-    returns:
-        Dict[str, float]: dictionary of parsed asset quantities.
-    """
-    processed: Dict[str, float] = {}
-    for key, value in data.items():
+def validate_price(data: dict) -> dict:
+    try:
+        price = float(data.get("price", 0))
+        if price <= 0:
+            raise ValueError()
+        data["price"] = round(price, 8)
+    except (ValueError, TypeError):
+        raise InvalidPayloadError(f"Invalid positive price required, got: {data.get('price')}")
+    return data
+
+def validate_volume(data: dict) -> dict:
+    try:
+        vol = float(data.get("volume", 0))
+        if vol < 0:
+            raise ValueError()
+        data["volume"] = round(vol, 4)
+    except (ValueError, TypeError):
+        raise InvalidPayloadError(f"Volume must be non-negative, got: {data.get('volume')}")
+    return data
+
+def process_stream(
+    raw_inputs: list[Any],
+    validators: list[Callable[[dict], dict]]
+) -> Generator[Dict[str, Any], None, None]:
+    for idx, item in enumerate(raw_inputs):
+        if not isinstance(item, dict):
+            sys.stderr.write(f"[Loop Skip] Record #{idx} is not a valid payload dict.\n")
+            continue
+        
+        payload = item.copy()
         try:
-            processed[str(key)] = float(value)
-        except (ValueError, TypeError):
-            processed[str(key)] = 0.0
-    return processed
+            for validator in validators:
+                payload = validator(payload)
+            yield payload
+        except InvalidPayloadError as err:
+            sys.stderr.write(f"[Loop Reject] Record #{idx} rejected: {err}\n")
+
+if __name__ == "__main__":
+    ticks = [
+        {"symbol": " btc ", "price": "64120.501", "volume": 12.5},
+        {"symbol": "ETH$", "price": 3400, "volume": 100},
+        "invalid_scalar_entry",
+        {"symbol": "SOL", "price": -10, "volume": 50},
+        {"symbol": "ADA", "price": "0.45", "volume": "1000.5"}
+    ]
+    pipeline = [validate_symbol, validate_price, validate_volume]
+    valid_ticks = list(process_stream(ticks, pipeline))
+    print(f"Processed {len(valid_ticks)} clean ticks: {valid_ticks}")
