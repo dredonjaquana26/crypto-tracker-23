@@ -1,62 +1,83 @@
-import sys
-from typing import Any, Callable, Generator, Dict
+import time
+from typing import Callable, Any, Dict, List
 
-class InvalidPayloadError(Exception):
-    """Raised when a crypto payload fails validation rules."""
-    pass
 
-def validate_symbol(data: dict) -> dict:
-    symbol = str(data.get("symbol", "")).strip().upper()
-    if not symbol or not symbol.isalnum() or len(symbol) > 10:
-        raise InvalidPayloadError(f"Malformed ticker symbol: '{data.get('symbol')}'")
-    data["symbol"] = symbol
-    return data
+class ValidationRule:
+    def __init__(self, name: str, predicate: Callable[[Any], bool], error_msg: str):
+        self.name = name
+        self.predicate = predicate
+        self.error_msg = error_msg
 
-def validate_price(data: dict) -> dict:
-    try:
-        price = float(data.get("price", 0))
-        if price <= 0:
-            raise ValueError()
-        data["price"] = round(price, 8)
-    except (ValueError, TypeError):
-        raise InvalidPayloadError(f"Invalid positive price required, got: {data.get('price')}")
-    return data
+    def __or__(self, other: "ValidationRule") -> "RuleChain":
+        return RuleChain([self, other])
 
-def validate_volume(data: dict) -> dict:
-    try:
-        vol = float(data.get("volume", 0))
-        if vol < 0:
-            raise ValueError()
-        data["volume"] = round(vol, 4)
-    except (ValueError, TypeError):
-        raise InvalidPayloadError(f"Volume must be non-negative, got: {data.get('volume')}")
-    return data
 
-def process_stream(
-    raw_inputs: list[Any],
-    validators: list[Callable[[dict], dict]]
-) -> Generator[Dict[str, Any], None, None]:
-    for idx, item in enumerate(raw_inputs):
-        if not isinstance(item, dict):
-            sys.stderr.write(f"[Loop Skip] Record #{idx} is not a valid payload dict.\n")
-            continue
-        
-        payload = item.copy()
-        try:
-            for validator in validators:
-                payload = validator(payload)
-            yield payload
-        except InvalidPayloadError as err:
-            sys.stderr.write(f"[Loop Reject] Record #{idx} rejected: {err}\n")
+class RuleChain:
+    def __init__(self, rules: List[ValidationRule]):
+        self.rules = rules
 
-if __name__ == "__main__":
-    ticks = [
-        {"symbol": " btc ", "price": "64120.501", "volume": 12.5},
-        {"symbol": "ETH$", "price": 3400, "volume": 100},
-        "invalid_scalar_entry",
-        {"symbol": "SOL", "price": -10, "volume": 50},
-        {"symbol": "ADA", "price": "0.45", "volume": "1000.5"}
-    ]
-    pipeline = [validate_symbol, validate_price, validate_volume]
-    valid_ticks = list(process_stream(ticks, pipeline))
-    print(f"Processed {len(valid_ticks)} clean ticks: {valid_ticks}")
+    def __or__(self, other: Any) -> "RuleChain":
+        if isinstance(other, RuleChain):
+            return RuleChain(self.rules + other.rules)
+        elif isinstance(other, ValidationRule):
+            return RuleChain(self.rules + [other])
+        return self
+
+    def validate(self, payload: Dict[str, Any]) -> List[str]:
+        return [
+            f"[{rule.name}] {rule.error_msg}"
+            for rule in self.rules
+            if not rule.predicate(payload)
+        ]
+
+
+IS_CRYPTO_SYMBOL = ValidationRule(
+    "symbol_check",
+    lambda p: isinstance(p.get("symbol"), str) and p["symbol"].endswith(("USDT", "BTC", "ETH")),
+    "Invalid or missing crypto pair format"
+)
+
+POSITIVE_PRICE = ValidationRule(
+    "price_check",
+    lambda p: isinstance(p.get("price"), (int, float)) and p["price"] > 0,
+    "Price must be a positive number"
+)
+
+VALID_VOLUME = ValidationRule(
+    "volume_check",
+    lambda p: isinstance(p.get("volume"), (int, float)) and p["volume"] >= 0.0001,
+    "Volume below minimum threshold of 0.0001"
+)
+
+NON_FUTURE_TS = ValidationRule(
+    "timestamp_check",
+    lambda p: isinstance(p.get("timestamp"), (int, float)) and p["timestamp"] <= time.time() + 5,
+    "Timestamp cannot be in the future"
+)
+
+TICK_VALIDATOR = IS_CRYPTO_SYMBOL | POSITIVE_PRICE | VALID_VOLUME | NON_FUTURE_TS
+
+
+class CryptoBatchProcessor:
+    def __init__(self, validator: RuleChain = TICK_VALIDATOR):
+        self.validator = validator
+        self.processed_count = 0
+        self.quarantine: List[Dict[str, Any]] = []
+
+    def process_stream(self, incoming_stream: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        clean_batch = []
+        for raw_payload in incoming_stream:
+            errors = self.validator.validate(raw_payload)
+            if errors:
+                self.quarantine.append({**raw_payload, "_errors": errors})
+                continue
+
+            clean_batch.append({
+                "ticker": raw_payload["symbol"].upper(),
+                "price": float(raw_payload["price"]),
+                "volume": float(raw_payload["volume"]),
+                "processed_at": time.time()
+            })
+            self.processed_count += 1
+
+        return clean_batch
