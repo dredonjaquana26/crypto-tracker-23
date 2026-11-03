@@ -1,37 +1,43 @@
-import functools
 import time
-from typing import Dict, Any
+import functools
+from typing import Callable, Any
 
-CACHE_TTL = 30
-_INTERNAL_CACHE: Dict[str, tuple[float, Any]] = {}
+def rate_limit(max_calls: int, period: int) -> Callable:
+    def decorator(func: Callable) -> Callable:
+        history = []
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            now = time.time()
+            history[:] = [t for t in history if now - t < period]
+            if len(history) >= max_calls:
+                time.sleep(period - (now - history[0]))
+            history.append(time.time())
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
-def memoize_crypto_data(func):
-    @functools.wraps(func)
-    def wrapper(symbol: str, *args, **kwargs):
-        now = time.time()
-        if symbol in _INTERNAL_CACHE:
-            timestamp, result = _INTERNAL_CACHE[symbol]
-            if now - timestamp < CACHE_TTL:
-                return result
-        
-        result = func(symbol, *args, **kwargs)
-        _INTERNAL_CACHE[symbol] = (now, result)
-        return result
-    return wrapper
+def format_price(value: float, currency: str = "USD") -> str:
+    return f"{currency} {value:,.2f}"
 
-class CryptoProcessor:
-    def __init__(self, exchange: str):
-        self.exchange = exchange
+def sanitize_symbol(symbol: str) -> str:
+    return ''.join(c for c in symbol.upper() if c.isalnum())
 
-    @memoize_crypto_data
-    def fetch_price(self, symbol: str) -> float:
-        # Simulated heavy network I/O
-        time.sleep(0.5)
-        price_map = {'BTC': 65000.0, 'ETH': 3500.0, 'SOL': 145.0}
-        return price_map.get(symbol.upper(), 0.0)
+class CryptoData: 
+    @staticmethod
+    def transform_payload(data: dict) -> dict:
+        return {k.lower(): v for k, v in data.items() if v is not None}
 
-    def batch_process(self, symbols: list[str]) -> dict[str, float]:
-        results = {}
-        for s in symbols:
-            results[s] = self.fetch_price(s)
-        return results
+def retry_request(attempts: int = 3, delay: float = 1.0) -> Callable:
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_ex = None
+            for _ in range(attempts):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_ex = e
+                    time.sleep(delay)
+            raise last_ex
+        return wrapper
+    return decorator
