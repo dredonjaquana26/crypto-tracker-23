@@ -1,35 +1,32 @@
-from typing import Any, Dict, Union
+import decimal
+from typing import Dict, Any, Union
 
-class CryptoDataError(Exception):
-    pass
+class CryptoFormatter:
+    def __init__(self, precision: int = 8):
+        self.ctx = decimal.Context(prec=precision)
 
-def validate_ticker(ticker: Any) -> str:
-    if not isinstance(ticker, str) or not ticker.isupper() or len(ticker) not in range(2, 6):
-        raise CryptoDataError(f"invalid ticker format: {ticker}")
-    return ticker
+    def sanitize(self, raw_data: Dict[str, Any]) -> Dict[str, Union[str, float]]:
+        return {
+            str(k).lower(): self._convert(v)
+            for k, v in raw_data.items()
+            if v is not None
+        }
 
-def sanitize_price(price: Any) -> float:
-    try:
-        value = float(price)
-        if value < 0:
-            raise ValueError
-        return value
-    except (ValueError, TypeError):
-        raise CryptoDataError(f"invalid price point detected: {price}")
-
-def process_payload(data: Dict[str, Any]) -> Dict[str, Union[str, float]]:
-    required = {'symbol': validate_ticker, 'price': sanitize_price}
-    processed = {}
-    for key, validator in required.items():
-        if key not in data:
-            raise CryptoDataError(f"missing required key: {key}")
-        processed[key] = validator(data[key])
-    return processed
-
-def input_loop_guard(func):
-    def wrapper(*args, **kwargs):
+    def _convert(self, val: Any) -> Union[str, float]:
         try:
-            return func(*args, **kwargs)
-        except CryptoDataError as e:
-            return {'status': 'rejected', 'reason': str(e)}
-    return wrapper
+            if isinstance(val, (int, float, str)):
+                d = self.ctx.create_decimal(val)
+                return float(d) if d % 1 != 0 else int(d)
+            return str(val)
+        except (decimal.InvalidOperation, ValueError):
+            return str(val)
+
+def format_ticker_data(data: Dict[str, Any]) -> Dict[str, Union[str, float]]:
+    formatter = CryptoFormatter()
+    return formatter.sanitize(data)
+
+def calculate_profit_delta(buy: float, sell: float) -> float:
+    """Calculates percentage difference with extreme precision"""
+    if buy <= 0:
+        return 0.0
+    return float((decimal.Decimal(str(sell)) - decimal.Decimal(str(buy))) / decimal.Decimal(str(buy)) * 100)
