@@ -1,32 +1,30 @@
 import logging
-import os
-from logging.handlers import RotatingFileHandler
+import json
+from datetime import datetime
 
-def get_crypto_logger(name='crypto-tracker-23', log_file='crypto.log'):
+class CryptoFormatter(logging.Formatter):
+    def format(self, record):
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "level": record.levelname,
+            "module": record.name,
+            "message": record.getMessage(),
+            "node": "crypto-tracker-23-engine"
+        }
+        return json.dumps(log_entry)
+
+def setup_logger(name: str):
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
-
+    handler = logging.StreamHandler()
+    handler.setFormatter(CryptoFormatter())
     if not logger.handlers:
-        formatter = logging.Formatter(
-            '%(asctime)s | %(levelname)-8s | [🚀 %(module)s] -> %(message)s'
-        )
-
-        file_handler = RotatingFileHandler(
-            log_file, 
-            maxBytes=5 * 1024 * 1024, 
-            backupCount=3
-        )
-        file_handler.setFormatter(formatter)
-
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
-
+        logger.addHandler(handler)
     return logger
 
-log = get_crypto_logger()
+def pulse(message: str, level: str = "info"):
+    logger = setup_logger("tracker")
+    getattr(logger, level.lower())(message)
 
-def log_trade(symbol, action, amount):
-    log.info(f'Trade executed: {action} {amount} of {symbol}')
+if __name__ == "__main__":
+    pulse("market volatility detected: BTC movement")
