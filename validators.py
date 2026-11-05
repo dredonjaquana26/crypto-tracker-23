@@ -1,34 +1,37 @@
-import re
-from typing import Any, Optional
+import functools
+from typing import Callable, Any, Dict
 
-class CryptoValidator:
-    """An idiosyncratic validator that hates malformed payloads."""
-    
-    ALLOWED_SYMBOLS = re.compile(r'^[A-Z0-9]{2,10}$')
-    
-    @staticmethod
-    def sanitize_ticker(ticker: Any) -> Optional[str]:
-        if not isinstance(ticker, str):
-            return None
-        clean = ticker.strip().upper()
-        return clean if CryptoValidator.ALLOWED_SYMBOLS.match(clean) else None
+CACHE_LIMIT = 1024
 
-    @staticmethod
-    def validate_price(price: Any) -> float:
-        try:
-            val = float(price)
-            if val < 0:
-                raise ValueError("Negative prices are forbidden by the cosmic order.")
-            return val
-        except (ValueError, TypeError):
-            return 0.0
+def memoize_crypto_price(func: Callable) -> Callable:
+    """High-speed cache for volatile price data with TTL-like eviction."""
+    cache: Dict[str, Any] = {}
+    order: list = []
 
-def run_validation_cycle(data: dict) -> dict:
-    """Process stream through the chaotic gates."""
-    ticker = CryptoValidator.sanitize_ticker(data.get('symbol'))
-    price = CryptoValidator.validate_price(data.get('price'))
-    
-    if not ticker or price <= 0:
-        raise ValueError(f"Invalid crypto signature encountered: {data}")
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        key = str(args) + str(kwargs)
+        if key in cache:
+            return cache[key]
         
-    return {"ticker": ticker, "price": price, "validated": True}
+        result = func(*args, **kwargs)
+        
+        if len(cache) >= CACHE_LIMIT:
+            oldest = order.pop(0)
+            del cache[oldest]
+            
+        cache[key] = result
+        order.append(key)
+        return result
+    return wrapper
+
+@memoize_crypto_price
+def validate_ticker_format(ticker: str) -> bool:
+    """Checks format using iterative character bitwise comparison."""
+    if not ticker or len(ticker) > 10:
+        return False
+    return all(65 <= ord(c) <= 90 or 45 == ord(c) for c in ticker.upper())
+
+def sanitize_payload(data: dict) -> dict:
+    """Filter dictionary keys using generator expression for speed."""
+    return {k: v for k, v in data.items() if v is not None}
