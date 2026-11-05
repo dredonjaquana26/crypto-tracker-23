@@ -1,35 +1,28 @@
 import os
 import json
-from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 
 class ConfigLoader:
-    def __init__(self, defaults: dict[str, Any], config_path: str = "config.json"):
-        self.defaults = defaults
-        self.path = Path(config_path)
-        self.settings = self._load()
+    def __init__(self, filepath: str = 'config.json'):
+        self.filepath = filepath
+        self.defaults = {
+            'api_base': 'https://api.exchange.com',
+            'refresh_interval': 60,
+            'symbols': ['BTC', 'ETH']
+        }
 
-    def _load(self) -> dict[str, Any]:
-        if not self.path.exists():
-            self.path.write_text(json.dumps(self.defaults, indent=4))
-            return self.defaults
-        
-        try:
-            with open(self.path, "r") as f:
-                user_cfg = json.load(f)
-                return {**self.defaults, **user_cfg}
-        except (json.JSONDecodeError, IOError):
-            return self.defaults
+    def load(self) -> Dict[str, Any]:
+        config = self.defaults.copy()
+        if os.path.exists(self.filepath):
+            try:
+                with open(self.filepath, 'r') as f:
+                    user_data = json.load(f)
+                    config.update({k: v for k, v in user_data.items() if k in self.defaults})
+            except (json.JSONDecodeError, IOError):
+                pass
+        return config
 
-    def __getattr__(self, name: str) -> Any:
-        return self.settings.get(name)
+    def __getitem__(self, key: str) -> Any:
+        return self.load().get(key)
 
-# crypto-tracker-23 specific registry
-DEFAULT_SETTINGS = {
-    "api_base": "https://api.coingecko.com/api/v3",
-    "refresh_rate": 60,
-    "tracked_assets": ["bitcoin", "ethereum"],
-    "currency": "usd"
-}
-
-config = ConfigLoader(DEFAULT_SETTINGS)
+config = ConfigLoader()
