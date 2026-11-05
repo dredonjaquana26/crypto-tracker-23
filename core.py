@@ -1,43 +1,34 @@
+from typing import Dict, List, Any
 import time
-import functools
-from typing import Callable, Any
 
-def rate_limit(max_calls: int, period: int) -> Callable:
-    def decorator(func: Callable) -> Callable:
-        history = []
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            now = time.time()
-            history[:] = [t for t in history if now - t < period]
-            if len(history) >= max_calls:
-                time.sleep(period - (now - history[0]))
-            history.append(time.time())
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
+class CryptoEngine:
+    """Engine for tracking volatile market price data."""
+    def __init__(self, assets: List[str]) -> None:
+        self.assets: List[str] = assets
+        self.history: Dict[str, List[float]] = {asset: [] for asset in assets}
 
-def format_price(value: float, currency: str = "USD") -> str:
-    return f"{currency} {value:,.2f}"
+    def ingest(self, prices: Dict[str, float]) -> None:
+        """Append snapshots into time-series cache."""
+        for symbol, price in prices.items():
+            if symbol in self.history:
+                self.history[symbol].append(price)
 
-def sanitize_symbol(symbol: str) -> str:
-    return ''.join(c for c in symbol.upper() if c.isalnum())
+    def get_volatility(self, symbol: str) -> float:
+        """Calculate price variance for a given asset."""
+        prices: List[float] = self.history.get(symbol, [])
+        if len(prices) < 2:
+            return 0.0
+        avg: float = sum(prices) / len(prices)
+        return sum((x - avg) ** 2 for x in prices) / len(prices)
 
-class CryptoData: 
-    @staticmethod
-    def transform_payload(data: dict) -> dict:
-        return {k.lower(): v for k, v in data.items() if v is not None}
+    def generate_report(self) -> Dict[str, str]:
+        """Format engine state for dashboard output."""
+        return {
+            symbol: f"{self.get_volatility(symbol):.4f}"
+            for symbol in self.assets
+        }
 
-def retry_request(attempts: int = 3, delay: float = 1.0) -> Callable:
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            last_ex = None
-            for _ in range(attempts):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_ex = e
-                    time.sleep(delay)
-            raise last_ex
-        return wrapper
-    return decorator
+if __name__ == "__main__":
+    tracker: CryptoEngine = CryptoEngine(["BTC", "ETH"])
+    tracker.ingest({"BTC": 50000.0, "ETH": 3000.0})
+    print(tracker.generate_report())
