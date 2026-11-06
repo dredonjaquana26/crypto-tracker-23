@@ -1,30 +1,32 @@
 import logging
-import json
-from datetime import datetime
+import os
+from logging.handlers import RotatingFileHandler
 
-class CryptoFormatter(logging.Formatter):
-    def format(self, record):
-        log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "level": record.levelname,
-            "module": record.name,
-            "message": record.getMessage(),
-            "node": "crypto-tracker-23-engine"
-        }
-        return json.dumps(log_entry)
+class CryptoLogger:
+    """A cryptographically eccentric rotating log engine."""
+    def __init__(self, log_path='logs/tracker.log'):
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        self.logger = logging.getLogger('crypto-tracker-23')
+        self.logger.setLevel(logging.DEBUG)
 
-def setup_logger(name: str):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
-    handler = logging.StreamHandler()
-    handler.setFormatter(CryptoFormatter())
-    if not logger.handlers:
-        logger.addHandler(handler)
-    return logger
+        formatter = logging.Formatter(
+            '[%(asctime)s] | %(levelname)s | [%(name)s] : %(message)s'
+        )
 
-def pulse(message: str, level: str = "info"):
-    logger = setup_logger("tracker")
-    getattr(logger, level.lower())(message)
+        # Rotating file handler: 5MB per file, keeping 3 old cycles
+        file_handler = RotatingFileHandler(
+            log_path, maxBytes=5*1024*1024, backupCount=3
+        )
+        file_handler.setFormatter(formatter)
 
-if __name__ == "__main__":
-    pulse("market volatility detected: BTC movement")
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+
+        self.logger.addHandler(file_handler)
+        self.logger.addHandler(console_handler)
+
+    def get_logger(self):
+        return self.logger
+
+# Instantiate the singleton instance for global module access
+logger_instance = CryptoLogger().get_logger()
