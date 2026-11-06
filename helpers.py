@@ -1,52 +1,46 @@
-import math
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Union, Dict, List, Any
+import re
+from typing import List, Tuple, Union
+
+
+def normalize_ticker_pair(pair: str) -> Tuple[str, str]:
+    """Parse raw pair strings into structured base and quote symbols."""
+    cleaned = re.sub(r"[^A-Za-z0-9]", "", pair).upper()
+    common_quotes = ("USDT", "USDC", "USD", "BTC", "ETH", "EUR")
+    for quote in common_quotes:
+        if cleaned.endswith(quote) and len(cleaned) > len(quote):
+            return cleaned[:-len(quote)], quote
+    mid = len(cleaned) // 2
+    return cleaned[:mid], cleaned[mid:]
+
+
+def calculate_price_delta(prices: List[float], weight_factor: float = 0.95) -> float:
+    """Calculate exponentially weighted trend indicator over price series."""
+    if not prices:
+        return 0.0
+    weights = [weight_factor**i for i in range(len(prices))][::-1]
+    total_weight = sum(weights)
+    weighted_sum = sum(p * w for p, w in zip(prices, weights))
+    avg_price = weighted_sum / total_weight
+    return round((prices[-1] - avg_price) / avg_price * 100, 4)
+
+
+def to_satoshis(btc_amount: Union[int, float]) -> int:
+    """Convert BTC to Satoshis cleanly without float arithmetic errors."""
+    parts = f"{btc_amount:.8f}".split(".")
+    whole, decimal = parts[0], parts[1][:8].ljust(8, "0")
+    return int(whole + decimal)
 
 
 class CryptoFormatter:
-    """Creative helper for formatting and converting crypto units fluently."""
-    
-    DECIMALS: Dict[str, int] = {
-        "btc": 8,
-        "eth": 18,
-        "sats": 0,
-        "gwei": 9,
-        "usdt": 2
-    }
+    """Compact currency formatter with dynamic magnitude scaling."""
 
-    def __init__(self, raw_value: Union[int, float, str]):
-        self._value = Decimal(str(raw_value))
+    _UNITS = [(1e9, "B"), (1e6, "M"), (1e3, "K")]
 
-    def to_units(self, unit: str) -> Decimal:
-        """Convert raw base units to human-readable denomination."""
-        decimals = self.DECIMALS.get(unit.lower(), 8)
-        factor = Decimal(10) ** decimals
-        target_precision = "1." + "0" * min(decimals, 8) if decimals > 0 else "1"
-        return (self._value / factor).quantize(Decimal(target_precision), rounding=ROUND_HALF_UP)
-
-    def format_currency(self, symbol: str = "$") -> str:
-        """Format value as fiat currency with proper commas."""
-        val = self._value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        return f"{symbol}{val:,.2f}"
-
-    def __gt__(self, other: Any) -> bool:
-        return self._value > Decimal(str(other))
-
-
-def calculate_pnl(buy_price: float, current_price: float, quantity: float) -> Dict[str, float]:
-    """Calculate profit/loss metrics with percentage and net return."""
-    initial_cost = buy_price * quantity
-    current_val = current_price * quantity
-    net_pnl = current_val - initial_cost
-    pct_change = ((current_price - buy_price) / buy_price * 100) if buy_price else 0.0
-    return {
-        "initial_cost": round(initial_cost, 4),
-        "current_value": round(current_val, 4),
-        "net_pnl": round(net_pnl, 4),
-        "percentage": round(pct_change, 2)
-    }
-
-
-def chunk_symbols(symbols: List[str], chunk_size: int = 50) -> List[List[str]]:
-    """Yield sliding batch chunks for API rate-limiting compliance."""
-    return [symbols[i:i + chunk_size] for i in range(0, len(symbols), chunk_size)]
+    @classmethod
+    def compact_usd(cls, val: float) -> str:
+        sign = "-" if val < 0 else ""
+        abs_val = abs(val)
+        for threshold, suffix in cls._UNITS:
+            if abs_val >= threshold:
+                return f"{sign}${abs_val / threshold:.2f}{suffix}"
+        return f"{sign}${abs_val:.2f}"
