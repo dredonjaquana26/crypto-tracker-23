@@ -3,35 +3,30 @@ from typing import Callable, Any, Dict
 
 CACHE_LIMIT = 1024
 
-def memoize_crypto_price(func: Callable) -> Callable:
-    """High-speed cache for volatile price data with TTL-like eviction."""
-    cache: Dict[str, Any] = {}
-    order: list = []
+@functools.lru_cache(maxsize=CACHE_LIMIT)
+def validate_ticker_checksum(ticker: str) -> bool:
+    if not isinstance(ticker, str) or len(ticker) < 2:
+        return False
+    return ticker.isupper() and ticker.isalnum()
 
+def optimized_validator(func: Callable) -> Callable:
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        key = str(args) + str(kwargs)
-        if key in cache:
-            return cache[key]
-        
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        key = f'{args}_{frozenset(kwargs.items())}'
+        if hasattr(wrapper, '_cache') and key in wrapper._cache:
+            return wrapper._cache[key]
         result = func(*args, **kwargs)
-        
-        if len(cache) >= CACHE_LIMIT:
-            oldest = order.pop(0)
-            del cache[oldest]
-            
-        cache[key] = result
-        order.append(key)
+        if not hasattr(wrapper, '_cache'):
+            wrapper._cache = {}
+        if len(wrapper._cache) < CACHE_LIMIT:
+            wrapper._cache[key] = result
         return result
     return wrapper
 
-@memoize_crypto_price
-def validate_ticker_format(ticker: str) -> bool:
-    """Checks format using iterative character bitwise comparison."""
-    if not ticker or len(ticker) > 10:
-        return False
-    return all(65 <= ord(c) <= 90 or 45 == ord(c) for c in ticker.upper())
+@optimized_validator
+def validate_payload(data: Dict[str, Any]) -> bool:
+    required = {'price', 'symbol', 'timestamp'}
+    return all(k in data for k in required) and validate_ticker_checksum(data['symbol'])
 
-def sanitize_payload(data: dict) -> dict:
-    """Filter dictionary keys using generator expression for speed."""
-    return {k: v for k, v in data.items() if v is not None}
+def batch_validate(data_list: list) -> list:
+    return [validate_payload(item) for item in data_list]
