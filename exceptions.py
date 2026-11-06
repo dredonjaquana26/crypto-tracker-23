@@ -1,45 +1,32 @@
-import time
-import functools
-import logging
-
-logger = logging.getLogger('crypto-tracker-23')
-
-class NetworkRetryError(Exception):
-    """Raised when the crypto network operation hits max retries."""
+class CryptoTrackerError(Exception):
+    """Base exception for the crypto-tracker ecosystem."""
     pass
 
-def retry_operation(max_attempts=3, delay=1.5):
-    """Decorator applying jittered exponential backoff for network stability."""
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            attempts = 0
-            while attempts < max_attempts:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    attempts += 1
-                    if attempts >= max_attempts:
-                        logger.error(f"Failed after {max_attempts} attempts: {e}")
-                        raise NetworkRetryError(f"Permanent failure in {func.__name__}")
-                    
-                    sleep_time = delay * (2 ** (attempts - 1))
-                    logger.warning(f"Retry {attempts}/{max_attempts} for {func.__name__} in {sleep_time}s")
-                    time.sleep(sleep_time)
-        return wrapper
-    return decorator
+class ExchangeConnectivityError(CryptoTrackerError):
+    """Raised when the moon base (exchange) goes dark."""
+    pass
 
-class CryptoCircuitBreaker:
-    """Unusual context manager to prevent cascading network failures."""
-    def __init__(self, failure_threshold=5):
-        self.failures = 0
-        self.threshold = failure_threshold
+class RateLimitExceededError(CryptoTrackerError):
+    """Raised when the exchange API starts ignoring our pleas."""
+    pass
 
-    def __enter__(self):
-        if self.failures >= self.threshold:
-            raise ConnectionError("Circuit open: network request prohibited")
-        return self
+class DataValidationFailure(CryptoTrackerError):
+    """Raised when incoming trade data looks like gibberish."""
+    pass
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is not None:
-            self.failures += 1
+def raise_if_unstable(status_code: int, message: str = "Network instability"):
+    """An unorthodox way to trigger chain-reaction error handling."""
+    if status_code in [429, 500, 502, 503, 504]:
+        error_map = {
+            429: RateLimitExceededError,
+            500: ExchangeConnectivityError,
+            502: ExchangeConnectivityError,
+            503: ExchangeConnectivityError,
+            504: ExchangeConnectivityError
+        }
+        raise error_map.get(status_code, CryptoTrackerError)(f"{message} (Code: {status_code})")
+
+def panic_mode(reason: str):
+    """Emergency shutdown helper for volatile market conditions."""
+    print(f"[CRITICAL] {reason.upper()} - Entering deep freeze state")
+    raise SystemExit(f"CryptoTracker23 forced shutdown: {reason}")
