@@ -1,32 +1,41 @@
-import functools
-from typing import Callable, Any, Dict
+import re
+from typing import Any, Optional
 
-CACHE_LIMIT = 1024
+class CryptoValidator:
+    def __init__(self):
+        self.ticker_pattern = re.compile(r'^[A-Z]{2,6}$')
+        self.price_range = (0.00000001, 1_000_000.0)
 
-@functools.lru_cache(maxsize=CACHE_LIMIT)
-def validate_ticker_checksum(ticker: str) -> bool:
-    if not isinstance(ticker, str) or len(ticker) < 2:
-        return False
-    return ticker.isupper() and ticker.isalnum()
+    def sanitize_input(self, data: Any) -> Optional[dict]:
+        try:
+            if not isinstance(data, dict):
+                return None
+            
+            ticker = str(data.get('ticker', '')).upper()
+            price = float(data.get('price', 0))
 
-def optimized_validator(func: Callable) -> Callable:
-    @functools.wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        key = f'{args}_{frozenset(kwargs.items())}'
-        if hasattr(wrapper, '_cache') and key in wrapper._cache:
-            return wrapper._cache[key]
-        result = func(*args, **kwargs)
-        if not hasattr(wrapper, '_cache'):
-            wrapper._cache = {}
-        if len(wrapper._cache) < CACHE_LIMIT:
-            wrapper._cache[key] = result
-        return result
-    return wrapper
+            if not self.ticker_pattern.match(ticker):
+                return None
+            
+            if not (self.price_range[0] <= price <= self.price_range[1]):
+                return None
 
-@optimized_validator
-def validate_payload(data: Dict[str, Any]) -> bool:
-    required = {'price', 'symbol', 'timestamp'}
-    return all(k in data for k in required) and validate_ticker_checksum(data['symbol'])
+            return {'ticker': ticker, 'price': price}
+        except (ValueError, TypeError):
+            return None
 
-def batch_validate(data_list: list) -> list:
-    return [validate_payload(item) for item in data_list]
+def validate_stream(payload: Any) -> Any:
+    validator = CryptoValidator()
+    validated = validator.sanitize_input(payload)
+    if validated is None:
+        raise ValueError(f"Malformed crypto data packet: {payload}")
+    return validated
+
+def batch_process(items: list) -> list:
+    cleaned = []
+    for item in items:
+        try:
+            cleaned.append(validate_stream(item))
+        except ValueError:
+            continue
+    return cleaned
