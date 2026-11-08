@@ -1,35 +1,85 @@
-import time
-import functools
-from decimal import Decimal
+import math
+from dataclasses import dataclass
+from typing import Callable, Generator, List, Optional
 
-def retry_on_timeout(retries=3, delay=2):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            for attempt in range(retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception:
-                    if attempt == retries - 1: raise
-                    time.sleep(delay)
-        return wrapper
-    return decorator
 
-def normalize_crypto(value):
-    """Converts any input to a precise Decimal for math"""
-    return Decimal(str(value)).normalize()
+@dataclass(frozen=True)
+class Tick:
+    symbol: str
+    price: float
+    volume: float
+    timestamp: float
 
-def format_currency(amount, symbol='USD'):
-    val = normalize_crypto(amount)
-    return f"{val:,.8f} {symbol}"
 
-def batch_process(data, size=10):
-    """Generator for chunking API response sets"""
-    for i in range(0, len(data), size):
-        yield data[i:i + size]
+class CryptoPipe:
+    """Overloaded pipeline operator for streaming crypto transformations."""
 
-def smart_timestamp():
-    """Unique millisecond resolution string for logs"""
-    return str(int(time.time() * 1000))
+    def __init__(self, func: Callable[[Tick], Optional[dict]]):
+        self.func = func
 
-# crypto-tracker-23: functional toolkit implementation
+    def __or__(self, other: "CryptoPipe") -> "CryptoPipe":
+        def chained(tick: Tick) -> Optional[dict]:
+            res = self.func(tick)
+            if res is None:
+                return None
+            return other.func(tick)
+
+        return CryptoPipe(chained)
+
+    def __call__(self, tick: Tick) -> Optional[dict]:
+        return self.func(tick)
+
+
+class AdaptiveAnomalyDetector:
+    """Calculates exponential moving average and dynamic z-scores for anomaly detection."""
+
+    def __init__(self, alpha: float = 0.15, threshold: float = 2.5):
+        self.alpha = alpha
+        self.threshold = threshold
+        self.ema: Optional[float] = None
+        self.var: float = 0.0
+
+    def process(self, tick: Tick) -> dict:
+        price = tick.price
+        if self.ema is None:
+            self.ema = price
+            z_score = 0.0
+        else:
+            delta = price - self.ema
+            self.ema += self.alpha * delta
+            self.var = (1 - self.alpha) * (self.var + self.alpha * (delta**2))
+            std_dev = math.sqrt(self.var) if self.var > 0 else 1e-6
+            z_score = delta / std_dev
+
+        status = "NORMAL"
+        if z_score > self.threshold:
+            status = "PUMP"
+        elif z_score < -self.threshold:
+            status = "DUMP"
+
+        return {
+            "symbol": tick.symbol,
+            "price": round(price, 8),
+            "ema": round(self.ema, 8),
+            "z_score": round(z_score, 4),
+            "status": status,
+        }
+
+
+def analyze_crypto_stream(
+    raw_ticks: List[dict], alpha: float = 0.2
+) -> Generator[dict, None, None]:
+    """Utility function to pipe raw crypto dicts through an adaptive analytical filter."""
+    detector = AdaptiveAnomalyDetector(alpha=alpha)
+    pipeline = CryptoPipe(lambda t: detector.process(t))
+
+    for raw in raw_ticks:
+        tick = Tick(
+            symbol=str(raw.get("symbol", "BTC/USD")),
+            price=float(raw.get("price", 0.0)),
+            volume=float(raw.get("volume", 0.0)),
+            timestamp=float(raw.get("ts", 0.0)),
+        )
+        result = pipeline(tick)
+        if result:
+            yield result
