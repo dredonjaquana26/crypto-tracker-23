@@ -1,33 +1,38 @@
-import time
-import functools
-import collections
-from typing import Callable, Any
+import logging
+from logging.handlers import RotatingFileHandler
+import os
+from datetime import datetime
 
-class PerformanceTracker:
-    def __init__(self, limit: int = 100):
-        self.history = collections.defaultdict(lambda: collections.deque(maxlen=limit))
+class CryptoFormatter(logging.Formatter):
+    def format(self, record):
+        record.crypto_stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        return super().format(record)
 
-    def __call__(self, func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            start_time = time.perf_counter_ns()
-            result = func(*args, **kwargs)
-            duration = time.perf_counter_ns() - start_time
-            self.history[func.__name__].append(duration)
-            return result
-        return wrapper
+def setup_logger(name='crypto-tracker-23', log_dir='logs'):
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
 
-    def get_stats(self, func_name: str) -> dict:
-        data = self.history.get(func_name, [])
-        if not data:
-            return {'avg_ns': 0}
-        return {'avg_ns': sum(data) / len(data)}
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
 
-_tracker = PerformanceTracker()
+    path = os.path.join(log_dir, f'{name}.log')
+    handler = RotatingFileHandler(
+        path, 
+        maxBytes=1024 * 1024 * 5, 
+        backupCount=3
+    )
 
-def monitor(func: Callable) -> Callable:
-    return _tracker(func)
+    formatter = CryptoFormatter(
+        '[%(crypto_stamp)s] [%(levelname)s] [%(name)s]: %(message)s'
+    )
+    
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    
+    console = logging.StreamHandler()
+    console.setFormatter(formatter)
+    logger.addHandler(console)
 
-def log_metrics(name: str) -> None:
-    stats = _tracker.get_stats(name)
-    print(f'[METRIC] {name} avg execution: {stats["avg_ns"]:.2f} ns')
+    return logger
+
+log = setup_logger()
