@@ -1,32 +1,33 @@
-import logging
-import os
-from logging.handlers import RotatingFileHandler
+import time
+import functools
+import collections
+from typing import Callable, Any
 
-class CryptoLogger:
-    """A cryptographically eccentric rotating log engine."""
-    def __init__(self, log_path='logs/tracker.log'):
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        self.logger = logging.getLogger('crypto-tracker-23')
-        self.logger.setLevel(logging.DEBUG)
+class PerformanceTracker:
+    def __init__(self, limit: int = 100):
+        self.history = collections.defaultdict(lambda: collections.deque(maxlen=limit))
 
-        formatter = logging.Formatter(
-            '[%(asctime)s] | %(levelname)s | [%(name)s] : %(message)s'
-        )
+    def __call__(self, func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            start_time = time.perf_counter_ns()
+            result = func(*args, **kwargs)
+            duration = time.perf_counter_ns() - start_time
+            self.history[func.__name__].append(duration)
+            return result
+        return wrapper
 
-        # Rotating file handler: 5MB per file, keeping 3 old cycles
-        file_handler = RotatingFileHandler(
-            log_path, maxBytes=5*1024*1024, backupCount=3
-        )
-        file_handler.setFormatter(formatter)
+    def get_stats(self, func_name: str) -> dict:
+        data = self.history.get(func_name, [])
+        if not data:
+            return {'avg_ns': 0}
+        return {'avg_ns': sum(data) / len(data)}
 
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
+_tracker = PerformanceTracker()
 
-        self.logger.addHandler(file_handler)
-        self.logger.addHandler(console_handler)
+def monitor(func: Callable) -> Callable:
+    return _tracker(func)
 
-    def get_logger(self):
-        return self.logger
-
-# Instantiate the singleton instance for global module access
-logger_instance = CryptoLogger().get_logger()
+def log_metrics(name: str) -> None:
+    stats = _tracker.get_stats(name)
+    print(f'[METRIC] {name} avg execution: {stats["avg_ns"]:.2f} ns')
