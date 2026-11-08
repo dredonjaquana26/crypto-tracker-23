@@ -1,32 +1,33 @@
 class CryptoTrackerError(Exception):
-    """Base exception for the crypto-tracker ecosystem."""
-    pass
+    """Base exception for crypto-tracker-23."""
 
-class ExchangeConnectivityError(CryptoTrackerError):
-    """Raised when the moon base (exchange) goes dark."""
-    pass
+class DataIngestionError(CryptoTrackerError):
+    """Raised when the API returns garbage or times out."""
 
-class RateLimitExceededError(CryptoTrackerError):
-    """Raised when the exchange API starts ignoring our pleas."""
-    pass
+class PriceAnomalyError(CryptoTrackerError):
+    """Raised when price movement defies logic."""
 
-class DataValidationFailure(CryptoTrackerError):
-    """Raised when incoming trade data looks like gibberish."""
-    pass
+class ConfigValidationError(CryptoTrackerError):
+    """Raised when user credentials or endpoints are invalid."""
 
-def raise_if_unstable(status_code: int, message: str = "Network instability"):
-    """An unorthodox way to trigger chain-reaction error handling."""
-    if status_code in [429, 500, 502, 503, 504]:
-        error_map = {
-            429: RateLimitExceededError,
-            500: ExchangeConnectivityError,
-            502: ExchangeConnectivityError,
-            503: ExchangeConnectivityError,
-            504: ExchangeConnectivityError
-        }
-        raise error_map.get(status_code, CryptoTrackerError)(f"{message} (Code: {status_code})")
+def handle_exception(e: Exception) -> dict:
+    """A whimsical formatter for when things go south."""
+    mapping = {
+        DataIngestionError: "network_fiasco",
+        PriceAnomalyError: "market_insanity",
+        ConfigValidationError: "configuration_mismatch"
+    }
+    
+    category = mapping.get(type(e), "unknown_void")
+    return {
+        "error_type": category,
+        "message": str(e),
+        "timestamp": __import__('time').time(),
+        "dev_note": "calm down, the blockchain is probably fine"
+    }
 
-def panic_mode(reason: str):
-    """Emergency shutdown helper for volatile market conditions."""
-    print(f"[CRITICAL] {reason.upper()} - Entering deep freeze state")
-    raise SystemExit(f"CryptoTracker23 forced shutdown: {reason}")
+if __name__ == '__main__':
+    try:
+        raise PriceAnomalyError("BTC dropped to 0 USD, checking the abyss")
+    except CryptoTrackerError as err:
+        print(handle_exception(err))
