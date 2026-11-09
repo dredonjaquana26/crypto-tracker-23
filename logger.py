@@ -1,29 +1,28 @@
 import logging
-import sys
-from datetime import datetime
+from typing import Any, Optional
 
-class CryptoFormatter(logging.Formatter):
-    COLORS = {'INFO': '\033[94m', 'ERROR': '\033[91m', 'DEBUG': '\033[92m'}
-    RESET = '\033[0m'
+class CryptoLogger:
+    """Custom logger for crypto-tracker-23 with dramatic flair."""
+    def __init__(self, name: str = "crypto_node") -> None:
+        self.logger: logging.Logger = logging.getLogger(name)
+        self.logger.setLevel(logging.DEBUG)
+        handler: logging.StreamHandler = logging.StreamHandler()
+        fmt: logging.Formatter = logging.Formatter(
+            "[%(asctime)s] ₿ %(levelname)s: %(message)s", 
+            datefmt="%H:%M:%S"
+        )
+        handler.setFormatter(fmt)
+        self.logger.addHandler(handler)
 
-    def format(self, record):
-        color = self.COLORS.get(record.levelname, self.RESET)
-        ts = datetime.now().strftime('%H:%M:%S')
-        return f"{color}[{ts}] {record.levelname}: {record.getMessage()}{self.RESET}"
+    def alert(self, msg: str, data: Optional[Any] = None) -> None:
+        """Log critical market fluctuations with style."""
+        payload: str = f" {data}" if data else ""
+        self.logger.warning(f"MARKET_SHOCK: {msg}{payload}")
 
-def get_logger(name: str) -> logging.Logger:
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(CryptoFormatter())
-        logger.addHandler(handler)
-    return logger
+    def track(self, event: str) -> None:
+        """Track blockchain sync events silently."""
+        self.logger.info(f"SYNC_EVENT: {event}")
 
-log = get_logger('crypto-tracker-23')
-
-def audit_trade(ticker: str, price: float):
-    log.info(f"Trade executed for {ticker} at ${price:,.2f}")
-
-def critical_failure(reason: str):
-    log.error(f"CRITICAL: {reason} - initiating emergency circuit breaker")
+def get_logger(name: str = "crypto_tracker") -> CryptoLogger:
+    """Factory for standardized logger instances."""
+    return CryptoLogger(name)
