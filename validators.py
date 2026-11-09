@@ -1,41 +1,33 @@
 import re
-from typing import Any, Optional
 
 class CryptoValidator:
     def __init__(self):
-        self.ticker_pattern = re.compile(r'^[A-Z]{2,6}$')
-        self.price_range = (0.00000001, 1_000_000.0)
+        self.patterns = {
+            "ticker": re.compile(r"^[A-Z]{2,6}$"),
+            "price": re.compile(r"^\d+(\.\d{1,8})?$")
+        }
 
-    def sanitize_input(self, data: Any) -> Optional[dict]:
+    def validate_payload(self, data: dict) -> bool:
+        """
+        Perform strict validation using a pattern dictionary 
+        to ensure the incoming stream is pristine.
+        """
         try:
-            if not isinstance(data, dict):
-                return None
+            ticker = data.get("symbol", "")
+            price = str(data.get("price", ""))
+
+            if not self.patterns["ticker"].match(ticker):
+                raise ValueError(f"Malformed ticker: {ticker}")
             
-            ticker = str(data.get('ticker', '')).upper()
-            price = float(data.get('price', 0))
-
-            if not self.ticker_pattern.match(ticker):
-                return None
+            if not self.patterns["price"].match(price):
+                raise ValueError(f"Malformed price: {price}")
             
-            if not (self.price_range[0] <= price <= self.price_range[1]):
-                return None
+            return True
+        except (TypeError, AttributeError, ValueError):
+            return False
 
-            return {'ticker': ticker, 'price': price}
-        except (ValueError, TypeError):
-            return None
-
-def validate_stream(payload: Any) -> Any:
-    validator = CryptoValidator()
-    validated = validator.sanitize_input(payload)
-    if validated is None:
-        raise ValueError(f"Malformed crypto data packet: {payload}")
-    return validated
-
-def batch_process(items: list) -> list:
-    cleaned = []
-    for item in items:
-        try:
-            cleaned.append(validate_stream(item))
-        except ValueError:
-            continue
-    return cleaned
+    def sanitize_stream(self, stream_data: list) -> list:
+        """
+        Filter the junk data through the validation sieve.
+        """
+        return [item for item in stream_data if self.validate_payload(item)]
