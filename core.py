@@ -1,13 +1,12 @@
 import array
-import math
 from typing import Dict, List, Tuple
 
 
-class FastTickerBuffer:
-    """High-performance pre-allocated ring buffer for raw price tick streams."""
+class FastTickRingBuffer:
+    """High-performance fixed-capacity ring buffer using typed native arrays."""
     __slots__ = ('_capacity', '_prices', '_timestamps', '_head', '_count', '_sum')
 
-    def __init__(self, capacity: int = 10000):
+    def __init__(self, capacity: int = 1000):
         self._capacity = capacity
         self._prices = array.array('d', [0.0] * capacity)
         self._timestamps = array.array('d', [0.0] * capacity)
@@ -15,75 +14,45 @@ class FastTickerBuffer:
         self._count = 0
         self._sum = 0.0
 
-    def append(self, timestamp: float, price: float) -> None:
-        """O(1) tick ingestion maintaining rolling calculations."""
-        if self._count == self._capacity:
-            self._sum -= self._prices[self._head]
-        else:
+    def push(self, timestamp: float, price: float) -> None:
+        if self._count < self._capacity:
+            idx = self._count
             self._count += 1
+        else:
+            idx = self._head
+            self._sum -= self._prices[idx]
+            self._head = (self._head + 1) % self._capacity
 
-        self._prices[self._head] = price
-        self._timestamps[self._head] = timestamp
+        self._timestamps[idx] = timestamp
+        self._prices[idx] = price
         self._sum += price
-        self._head = (self._head + 1) % self._capacity
 
-    def rolling_sma(self) -> float:
-        """Fast arithmetic mean in constant time."""
-        if self._count == 0:
-            return 0.0
-        return self._sum / self._count
-
-    def exp_moving_average(self, period: int = 14) -> float:
-        """EMA calculation over pre-allocated ring buffer slice."""
-        if self._count == 0:
-            return 0.0
-
-        span = min(self._count, period)
-        alpha = 2.0 / (span + 1.0)
-        start_idx = (self._head - 1) % self._capacity
-        ema = self._prices[start_idx]
-
-        for i in range(1, span):
-            idx = (self._head - 1 - i) % self._capacity
-            ema = (self._prices[idx] * alpha) + (ema * (1.0 - alpha))
-
-        return ema
-
-    def volatility_stddev(self) -> float:
-        """Population standard deviation over stored tick window."""
-        if self._count <= 1:
-            return 0.0
-
-        mean = self._sum / self._count
-        variance_sum = 0.0
-        prices = self._prices
-
-        for i in range(self._count):
-            diff = prices[i] - mean
-            variance_sum += diff * diff
-
-        return math.sqrt(variance_sum / self._count)
+    def moving_average(self) -> float:
+        return self._sum / self._count if self._count > 0 else 0.0
 
 
-class CoreMetricsEngine:
-    """Optimized execution engine for high-frequency price feeds."""
-    def __init__(self, history_depth: int = 5000):
-        self._depth = history_depth
-        self._symbol_registry: Dict[str, FastTickerBuffer] = {}
+class CryptoCoreTracker:
+    """Optimized core ticker processing engine using aligned memory buffers."""
+    __slots__ = ('_buffers', '_window_size')
 
-    def process_tick_batch(self, batch: List[Tuple[str, float, float]]) -> Dict[str, float]:
-        """Process price ticks with localized buffer resolution."""
-        registry = self._symbol_registry
-        depth = self._depth
+    def __init__(self, window_size: int = 500):
+        self._window_size = window_size
+        self._buffers: Dict[str, FastTickRingBuffer] = {}
+
+    def ingest_ticks(self, batch: List[Tuple[str, float, float]]) -> Dict[str, float]:
         results = {}
-
-        for symbol, ts, price in batch:
-            buf = registry.get(symbol)
-            if buf is None:
-                buf = FastTickerBuffer(depth)
-                registry[symbol] = buf
-
-            buf.append(ts, price)
-            results[symbol] = buf.rolling_sma()
-
+        for symbol, timestamp, price in batch:
+            if symbol not in self._buffers:
+                self._buffers[symbol] = FastTickRingBuffer(self._window_size)
+            buf = self._buffers[symbol]
+            buf.push(timestamp, price)
+            results[symbol] = buf.moving_average()
         return results
+
+    def get_volatility(self, symbol: str) -> float:
+        buf = self._buffers.get(symbol)
+        if not buf or buf._count < 2:
+            return 0.0
+        mean = buf.moving_average()
+        variance = sum((buf._prices[i] - mean) ** 2 for i in range(buf._count)) / buf._count
+        return variance ** 0.5
