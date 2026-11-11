@@ -1,14 +1,15 @@
 # crypto-tracker-23
 
-Crypto-tracker-23 is a lightweight Python command-line utility that provides real-time monitoring and historical price tracking for major cryptocurrencies. It leverages the CoinGecko API to deliver accurate market data and customizable price alerts directly to your terminal.
+Crypto-tracker-23 is a lightweight Python-based CLI tool designed for real-time monitoring of cryptocurrency market data. It provides developers and enthusiasts with instant price tracking, portfolio valuation, and historical trend analysis directly from the terminal.
 
-### Key Features
-*   **Live Price Monitoring:** Fetches sub-second market data for top-performing assets using an optimized asynchronous API client.
-*   **Portfolio Snapshot:** Calculates total portfolio value in USD based on user-defined holdings and live market rates.
-*   **Threshold Alerts:** Set custom trigger prices and receive desktop notifications when an asset hits your target buy or sell range.
-*   **Data Persistence:** Saves session history into local CSV files for quick trend analysis and auditing.
+## Features
 
-### Installation
+*   **Live Market Data:** Fetches real-time price updates for over 100+ cryptocurrencies using the CoinGecko API.
+*   **Portfolio Tracking:** Automatically calculates your total asset value based on custom local wallet configurations.
+*   **Alert System:** Configurable price thresholds that trigger desktop notifications when a coin hits a target value.
+*   **Data Export:** Save current market snapshots to CSV format for external analysis in Excel or Pandas.
+
+## Installation
 
 Ensure you have Python 3.8+ installed. Clone the repository and install the required dependencies:
 
@@ -18,23 +19,22 @@ cd crypto-tracker-23
 pip install -r requirements.txt
 ```
 
-### Usage
+## Usage
 
-To start the tracker and view live prices for your watch-list, run the main entry point:
-
-```bash
-python main.py --watch BTC,ETH,SOL
-```
-
-To configure portfolio holdings and enable automated price alerts, modify the `config.yaml` file and execute:
+To view the live price of a specific cryptocurrency, use the track command:
 
 ```bash
-python main.py --monitor --interval 60
+python tracker.py --coin bitcoin --currency usd
 ```
 
-This will run the tracker in a persistent loop, checking prices every 60 seconds and alerting you if defined thresholds are crossed.
+To calculate the value of your local portfolio defined in `assets.json`:
 
-### License
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+```bash
+python tracker.py --portfolio assets.json
+```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## License
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Distributed under the MIT License. See `LICENSE` for more information.
