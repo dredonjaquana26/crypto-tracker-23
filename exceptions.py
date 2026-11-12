@@ -1,33 +1,58 @@
-class CryptoTrackerError(Exception):
-    """Base exception for crypto-tracker-23."""
+"""Custom exception hierarchy for crypto-tracker-23 with telemetry context."""
 
-class DataIngestionError(CryptoTrackerError):
-    """Raised when the API returns garbage or times out."""
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
-class PriceAnomalyError(CryptoTrackerError):
-    """Raised when price movement defies logic."""
 
-class ConfigValidationError(CryptoTrackerError):
-    """Raised when user credentials or endpoints are invalid."""
+class CryptoTrackerBaseError(Exception):
+    """Base exception embedding telemetry metadata and subscriptable context payloads."""
 
-def handle_exception(e: Exception) -> dict:
-    """A whimsical formatter for when things go south."""
-    mapping = {
-        DataIngestionError: "network_fiasco",
-        PriceAnomalyError: "market_insanity",
-        ConfigValidationError: "configuration_mismatch"
-    }
-    
-    category = mapping.get(type(e), "unknown_void")
-    return {
-        "error_type": category,
-        "message": str(e),
-        "timestamp": __import__('time').time(),
-        "dev_note": "calm down, the blockchain is probably fine"
-    }
+    def __init__(self, message: str, payload: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(message)
+        self.message: str = message
+        self.payload: Dict[str, Any] = payload or {}
+        self.timestamp: str = datetime.now(timezone.utc).isoformat()
 
-if __name__ == '__main__':
-    try:
-        raise PriceAnomalyError("BTC dropped to 0 USD, checking the abyss")
-    except CryptoTrackerError as err:
-        print(handle_exception(err))
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize exception state and telemetry to a plain dictionary.
+
+        Returns:
+            Dict[str, Any]: Structured dictionary representation of the error.
+        """
+        return {
+            "error_type": self.__class__.__name__,
+            "message": self.message,
+            "timestamp": self.timestamp,
+            "context": self.payload,
+        }
+
+    def __getitem__(self, item: str) -> Any:
+        """Allow direct subscript access to payload attributes."""
+        return self.payload[item]
+
+
+class MarketAnomalyError(CryptoTrackerBaseError):
+    """Raised when asset price movements breach dynamic safety threshold margins."""
+
+    def __init__(self, ticker: str, delta_pct: float, threshold_pct: float) -> None:
+        msg: str = f"Unusual market volatility on {ticker}: {delta_pct:+.2f}% (limit: ±{threshold_pct:.2f}%)"
+        context: Dict[str, Any] = {
+            "ticker": ticker.upper(),
+            "delta_pct": delta_pct,
+            "threshold_pct": threshold_pct,
+            "severity": "CRITICAL" if abs(delta_pct) > threshold_pct * 2 else "WARNING",
+        }
+        super().__init__(message=msg, payload=context)
+
+
+class RateLimitExceededError(CryptoTrackerBaseError):
+    """Raised when exchange request quotas are exhausted."""
+
+    def __init__(self, provider: str, retry_after: int) -> None:
+        msg: str = f"API quota exhausted for '{provider}'. Retry backoff: {retry_after}s."
+        context: Dict[str, Any] = {
+            "provider": provider,
+            "retry_after_sec": retry_after,
+            "resumes_at": datetime.now(timezone.utc).timestamp() + retry_after,
+        }
+        super().__init__(message=msg, payload=context)
