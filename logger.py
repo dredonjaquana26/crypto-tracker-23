@@ -1,31 +1,35 @@
-import datetime
-import json
+import logging
+from logging.handlers import RotatingFileHandler
 import sys
+import os
 
 class CryptoLogger:
-    def __init__(self, log_file: str = "crypto_ops.log"):
-        self.log_file = log_file
+    def __init__(self, name='crypto-tracker-23', log_file='tracker.log'):
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(logging.DEBUG)
+        
+        formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)-8s | [%(name)s] -> %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
 
-    def __call__(self, entry_type: str, data: dict):
-        timestamp = datetime.datetime.utcnow().isoformat()
-        payload = {
-            "ts": timestamp,
-            "level": entry_type.upper(),
-            "context": "crypto-tracker-23",
-            **data
-        }
-        self._persist(payload)
+        # Console stream handler
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        self.logger.addHandler(console_handler)
 
-    def _persist(self, payload: dict):
-        formatted_line = json.dumps(payload, separators=(',', ':'))
-        with open(self.log_file, "a") as f:
-            f.write(formatted_line + "\n")
+        # Rotating file handler (5MB per file, keep 3 backups)
+        file_handler = RotatingFileHandler(
+            log_file, maxBytes=5*1024*1024, backupCount=3
+        )
+        file_handler.setFormatter(formatter)
+        self.logger.addHandler(file_handler)
 
-    def audit_trade(self, symbol: str, price: float, side: str):
-        self("TRADE", {"pair": symbol, "px": price, "side": side})
+    def get_logger(self):
+        return self.logger
 
-    def system_alert(self, message: str, severity: int = 1):
-        self("ALERT", {"msg": message, "lvl": severity})
+# Singleton instance for quick access
+logger_instance = CryptoLogger().get_logger()
 
-# Instantiate a singleton logger for global application usage
-tracker_logger = CryptoLogger()
+def get_crypto_logger():
+    return logger_instance
