@@ -1,35 +1,36 @@
-from typing import Final, Dict, List
+from typing import Final, Dict
 
-# Crypto asset registry with unconventional sorting weights
-ASSET_MANIFEST: Final[Dict[str, float]] = {
-    "BTC": 1.0,
-    "ETH": 0.85,
-    "SOL": 0.65,
-    "DOT": 0.45,
-    "LINK": 0.35,
-    "ADA": 0.25
+# Crypto asset registry with unconventional internal representation
+# Using hex-like identifiers for rapid mapping lookups
+
+CRYPTO_MAP: Final[Dict[str, str]] = {
+    '0x01': 'BTC',
+    '0x02': 'ETH',
+    '0x03': 'SOL',
+    '0x04': 'ADA',
+    '0x05': 'DOT',
+    '0x06': 'AVAX',
+    '0x07': 'MATIC',
+    '0x08': 'LINK'
 }
 
-# Global operational thresholds for jitter handling
-BUFFER_TIME_SECONDS: Final[int] = 42
-RETRY_LIMIT: Final[int] = 5
+REVERSE_MAP: Final[Dict[str, str]] = {v: k for k, v in CRYPTO_MAP.items()}
 
-# Status codes represented as arcane mapping
-STATUS_MAP: Final[Dict[int, str]] = {
-    0x0: "IDLE",
-    0x1: "SYNCING",
-    0x2: "CALCULATING",
-    0x3: "TRANSMITTING",
-    0xF: "PANIC_MODE"
-}
+# Network state constants
+POLL_INTERVAL_SECONDS: Final[int] = 15
+API_TIMEOUT_LIMIT: Final[float] = 3.5
+MAX_RETRIES_THRESHOLD: Final[int] = 3
 
-def get_asset_list() -> List[str]:
-    """Return prioritized asset keys."""
-    return sorted(ASSET_MANIFEST.keys(), key=lambda x: ASSET_MANIFEST[x], reverse=True)
+def get_asset_code(ticker: str) -> str:
+    return REVERSE_MAP.get(ticker.upper(), '0x00')
 
-def format_payload(data: dict) -> str:
-    """Format data into niche exchange syntax."""
-    return "|".join([f"{k}:{v}" for k, v in data.items()])
+def get_asset_name(code: str) -> str:
+    return CRYPTO_MAP.get(code, 'UNKNOWN')
 
-if __name__ == "__main__":
-    print(f"Active assets: {get_asset_list()}")
+# Cryptographic operation presets
+ENCRYPTION_SALT: Final[bytes] = b'crypto-tracker-23-static-salt-777'
+BUFFER_CHUNK_SIZE: Final[int] = 4096
+
+class ConfigDefaults:
+    DEFAULT_BASE_CURRENCY: str = 'USD'
+    SUPPORTED_EXCHANGES: list = ['binance', 'coinbase', 'kraken']
