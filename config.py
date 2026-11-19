@@ -1,26 +1,31 @@
 import os
-from dataclasses import dataclass
-from typing import Dict, Any
+from typing import Any, Dict
 
-@dataclass(frozen=True)
 class CryptoConfig:
-    API_KEY: str = os.getenv("CRYPTO_API_KEY", "default_dev_key")
-    BASE_URL: str = "https://api.crypto-tracker-23.io/v1"
-    POLLING_INTERVAL: int = int(os.getenv("POLL_SEC", "30"))
-    SUPPORTED_PAIRS: tuple = ("BTC-USD", "ETH-USD", "SOL-USD")
+    def __init__(self, defaults: Dict[str, Any]):
+        self._data = defaults
+        self._load_env()
 
-def get_environment_config() -> Dict[str, Any]:
-    config = CryptoConfig()
-    return {
-        "key": config.API_KEY,
-        "endpoint": config.BASE_URL,
-        "frequency": config.POLLING_INTERVAL,
-        "assets": list(config.SUPPORTED_PAIRS)
+    def _load_env(self) -> None:
+        for key in self._data.keys():
+            env_val = os.getenv(f'CRYPTO_{key.upper()}')
+            if env_val:
+                self._data[key] = type(self._data[key])(env_val)
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data.get(key)
+
+    def __getattr__(self, name: str) -> Any:
+        return self._data.get(name)
+
+def get_settings() -> CryptoConfig:
+    defaults = {
+        'api_key': 'default_secret',
+        'timeout': 30,
+        'base_url': 'https://api.crypto-tracker-23.io',
+        'retries': 3,
+        'debug': False
     }
+    return CryptoConfig(defaults)
 
-if __name__ == "__main__":
-    # Self-validation check for environment integrity
-    env = get_environment_config()
-    if "default" in env["key"]:
-        print("Warning: running with default credentials")
-    print(f"Config initialized for {len(env['assets'])} assets")
+settings = get_settings()
