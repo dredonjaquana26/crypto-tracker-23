@@ -1,33 +1,31 @@
 import time
-from functools import wraps
+import functools
+import random
 from typing import Callable, Any
 
-def retry_strategy(retries: int = 3, delay: float = 1.0):
+def retry_with_backoff(retries: int = 3, delay: float = 1.0, factor: float = 2.0):
+    """Decorator implementing exponential backoff for crypto api resilience."""
     def decorator(func: Callable):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            last_ex = None
-            for i in range(retries):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs) -> Any:
+            attempt = 0
+            current_delay = delay
+            while attempt < retries:
                 try:
                     return func(*args, **kwargs)
-                except Exception as e:
-                    last_ex = e
-                    time.sleep(delay * (2 ** i))
-            raise last_ex
+                except (ConnectionError, TimeoutError) as e:
+                    attempt += 1
+                    if attempt == retries:
+                        raise e
+                    jitter = random.uniform(0, 0.1 * current_delay)
+                    time.sleep(current_delay + jitter)
+                    current_delay *= factor
+            return None
         return wrapper
     return decorator
 
-def sanitize_ticker(symbol: str) -> str:
-    return str(symbol).strip().upper().replace('/', '_')
-
-class CryptoFormatter:
-    @staticmethod
-    def format_currency(amount: float, pair: str = 'USD') -> str:
-        return f"{amount:,.2f} {pair}"
-
-def batch_process(data: list, size: int = 10):
-    for i in range(0, len(data), size):
-        yield data[i:i + size]
-
-def timestamp_now() -> int:
-    return int(time.time())
+@retry_with_backoff(retries=5)
+def fetch_price_data(endpoint: str):
+    """Simulated network call for volatile crypto tickers."""
+    # Placeholder logic for network dependency
+    return {"status": "success", "ticker": "BTC"}
