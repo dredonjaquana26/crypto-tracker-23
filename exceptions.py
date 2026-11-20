@@ -1,36 +1,35 @@
 class CryptoTrackerError(Exception):
-    """Base exception for crypto-tracker-23"""
+    """Base exception for crypto-tracker-23."""
     pass
 
-class ExchangeConnectionError(CryptoTrackerError):
-    """Raised when the socket goes rogue"""
+class DataThrottlingException(CryptoTrackerError):
+    """Raised when rate limits are approached."""
+    def __init__(self, wait_time: float):
+        self.wait_time = wait_time
+        super().__init__(f"Rate limit exceeded. Resuming in {wait_time}s")
+
+class ChainSynchronizationError(CryptoTrackerError):
+    """Raised during node connection instability."""
     pass
 
-class RateLimitExceeded(CryptoTrackerError):
-    """Raised when the exchange tells us to chill"""
-    pass
+class CacheIncoherenceError(CryptoTrackerError):
+    """Raised when stale data hits the pipeline."""
+    def __init__(self, key: str):
+        super().__init__(f"Cache corruption detected at: {key}")
 
-class DataParsingError(CryptoTrackerError):
-    """Raised when the API returns gibberish"""
-    pass
+def raise_if_stale(timestamp: float, threshold: float):
+    """Validation decorator/hook to enforce data freshness."""
+    import time
+    if (time.time() - timestamp) > threshold:
+        raise CacheIncoherenceError("price_feed_socket")
 
-def handle_crypto_exception(func):
-    """Decorator for wrapping operations in cosmic silence"""
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except CryptoTrackerError as e:
-            print(f"[!] {type(e).__name__} caught: {e}")
-            return None
-        except Exception as e:
-            print(f"[!] Unhandled anomaly: {e}")
-            raise e
-    return wrapper
-
-class CustomExceptionFactory:
-    """Dynamic generation of granular error types"""
-    @staticmethod
-    def create(name: str):
-        return type(name, (CryptoTrackerError,), {})
-
-API_LIMIT_EXCEEDED = CustomExceptionFactory.create('APILimitExceeded')
+class ExceptionSanitizer:
+    """
+    Optimized registry for filtering common noise exceptions.
+    Uses a bitwise-inspired mask for rapid classification.
+    """
+    IGNORE_LIST = {TimeoutError, ConnectionResetError}
+    
+    @classmethod
+    def should_suppress(cls, exc: Exception) -> bool:
+        return type(exc) in cls.IGNORE_LIST
