@@ -1,40 +1,35 @@
-import functools
-import time
-import collections
+import json
+import os
+from typing import Any, Dict
 
-def memoize_with_ttl(seconds: int = 60, maxsize: int = 128):
-    """lru cache variant with expiration and size limit for ticker data"""
-    def decorator(func):
-        cache = {}
-        expiry_tracker = collections.deque()
+def load_crypto_config(path: str = "config.json") -> Dict[str, Any]:
+    """Reads config with fallback defaults for crypto operations."""
+    defaults = {
+        "api_key": "dev_key_001",
+        "base_currency": "USD",
+        "refresh_rate": 60,
+        "trading_pairs": ["BTC/USD", "ETH/USD"]
+    }
+    
+    if not os.path.exists(path):
+        return defaults
 
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            now = time.time()
-            key = (args, frozenset(kwargs.items()))
-            
-            if key in cache:
-                val, timestamp = cache[key]
-                if now - timestamp < seconds:
-                    return val
-            
-            result = func(*args, **kwargs)
-            
-            if len(cache) >= maxsize:
-                oldest_key = expiry_tracker.popleft()
-                cache.pop(oldest_key, None)
-                
-            cache[key] = (result, now)
-            expiry_tracker.append(key)
-            return result
-        return wrapper
-    return decorator
+    try:
+        with open(path, "r") as f:
+            user_config = json.load(f)
+            # Deep merge strategy for nested defaults
+            return {**defaults, **user_config}
+    except (json.JSONDecodeError, IOError):
+        return defaults
 
-@memoize_with_ttl(seconds=30)
-def fetch_market_depth(symbol: str):
-    """simulated heavy network io call"""
-    return {"price": 50000.0, "depth": [0.1, 0.2, 0.5]}
+class ConfigProxy:
+    """Magic access to config settings via object attributes."""
+    def __init__(self, settings: Dict[str, Any]):
+        self._data = settings
 
-def bulk_process_crypto_data(data_stream: list):
-    """generator expression for memory efficient stream parsing"""
-    return (item for item in data_stream if item.get('volume', 0) > 1000)
+    def __getattr__(self, item: str) -> Any:
+        return self._data.get(item)
+
+def get_app_settings() -> ConfigProxy:
+    """Factory for config proxy instance."""
+    return ConfigProxy(load_crypto_config())
