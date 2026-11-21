@@ -1,31 +1,34 @@
 import time
 import functools
-import random
-from typing import Callable, Any
+from decimal import Decimal
 
-def retry_with_backoff(retries: int = 3, delay: float = 1.0, factor: float = 2.0):
-    """Decorator implementing exponential backoff for crypto api resilience."""
-    def decorator(func: Callable):
+def rate_limited(calls, period):
+    def decorator(func):
+        history = []
         @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
-            attempt = 0
-            current_delay = delay
-            while attempt < retries:
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    attempt += 1
-                    if attempt == retries:
-                        raise e
-                    jitter = random.uniform(0, 0.1 * current_delay)
-                    time.sleep(current_delay + jitter)
-                    current_delay *= factor
-            return None
+        def wrapper(*args, **kwargs):
+            now = time.time()
+            history[:] = [t for t in history if now - t < period]
+            if len(history) >= calls:
+                raise RuntimeError('Rate limit exceeded for crypto API')
+            history.append(now)
+            return func(*args, **kwargs)
         return wrapper
     return decorator
 
-@retry_with_backoff(retries=5)
-def fetch_price_data(endpoint: str):
-    """Simulated network call for volatile crypto tickers."""
-    # Placeholder logic for network dependency
-    return {"status": "success", "ticker": "BTC"}
+def format_crypto_val(value: float, precision: int = 8) -> str:
+    return f'{Decimal(str(value)):.{precision}f}'.rstrip('0').rstrip('.')
+
+def deep_get(data: dict, path: str, default=None):
+    keys = path.split('.')
+    for key in keys:
+        try:
+            data = data[key]
+        except (KeyError, TypeError):
+            return default
+    return data
+
+def calculate_roi(initial: float, current: float) -> float:
+    if initial == 0:
+        return 0.0
+    return ((current - initial) / initial) * 100
