@@ -1,27 +1,16 @@
 import os
-from typing import Any, Dict
+from dataclasses import dataclass
+from typing import Dict, Any
 
-def get_env_var(key: str, default: Any, cast=str) -> Any:
-    return cast(os.getenv(key, default))
-
+@dataclass(frozen=True)
 class CryptoConfig:
-    def __init__(self):
-        self._data = {
-            "API_KEY": get_env_var("CRYPTO_API_KEY", "default_key"),
-            "REFRESH_RATE": get_env_var("REFRESH_RATE", 60, int),
-            "SYMBOLS": get_env_var("WATCHLIST", "BTC,ETH,SOL").split(","),
-            "DEBUG_MODE": get_env_var("DEBUG", False, lambda x: x == "True")
-        }
+    API_KEY: str = os.getenv('CRYPTO_API_KEY', 'default_dev_key')
+    BASE_URL: str = 'https://api.coingecko.com/api/v3'
+    POLL_INTERVAL: int = int(os.getenv('POLL_INTERVAL', '60'))
+    ENABLED_SYMBOLS: tuple = ('bitcoin', 'ethereum', 'solana')
 
-    def __getattr__(self, name: str) -> Any:
-        if name in self._data:
-            return self._data[name]
-        raise AttributeError(f"Config '{name}' not found in crypto-tracker-23")
+    def to_dict(self) -> Dict[str, Any]:
+        return {k: v for k, v in self.__dict__.items() if not k.startswith('__')}
 
-    def __getitem__(self, key: str) -> Any:
-        return self._data.get(key)
-
-    def items(self):
-        return self._data.items()
-
-config = CryptoConfig()
+def load_settings():
+    return CryptoConfig()
