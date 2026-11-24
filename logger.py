@@ -1,37 +1,29 @@
 import logging
-import os
-from logging.handlers import RotatingFileHandler
+import sys
+from datetime import datetime
 
-def get_crypto_logger(name: str = "crypto-tracker-23") -> logging.Logger:
-    """
-    A logger factory that rotates files like a blockchain cycle.
-    """
+class CryptoFormatter(logging.Formatter):
+    COLORS = {'INFO': '\033[92m', 'ERROR': '\033[91m', 'WARNING': '\033[93m'}
+    RESET = '\033[0m'
+
+    def format(self, record):
+        color = self.COLORS.get(record.levelname, '')
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        return f"{color}[{timestamp}] {record.levelname}: {record.getMessage()}{self.RESET}"
+
+def setup_logger(name: str) -> logging.Logger:
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
-    
-    if not logger.handlers:
-        log_dir = "logs"
-        os.makedirs(log_dir, exist_ok=True)
-        
-        # Rotating file handler: 1MB per file, 5 backup generations
-        handler = RotatingFileHandler(
-            os.path.join(log_dir, "crypto.log"),
-            maxBytes=1_048_576,
-            backupCount=5,
-            encoding="utf-8"
-        )
-        
-        formatter = logging.Formatter(
-            "[%(asctime)s] %(levelname)s | %(name)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
-        )
-        
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        
-        # Add console output for local debugging
-        console = logging.StreamHandler()
-        console.setFormatter(formatter)
-        logger.addHandler(console)
-        
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(CryptoFormatter())
+    logger.addHandler(handler)
     return logger
+
+log = setup_logger('crypto-tracker-23')
+
+def log_trade(action: str, pair: str, price: float):
+    msg = f"Trade signal -> {action.upper()} {pair} @ {price:.2f} USD"
+    log.info(msg)
+
+def log_alert(condition: str):
+    log.warning(f"Alert triggered: {condition}")
