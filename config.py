@@ -1,16 +1,38 @@
 import os
-from dataclasses import dataclass
-from typing import Dict, Any
+import json
+from typing import Any, Dict
 
-@dataclass(frozen=True)
-class CryptoConfig:
-    API_KEY: str = os.getenv('CRYPTO_API_KEY', 'default_dev_key')
-    BASE_URL: str = 'https://api.coingecko.com/api/v3'
-    POLL_INTERVAL: int = int(os.getenv('POLL_INTERVAL', '60'))
-    ENABLED_SYMBOLS: tuple = ('bitcoin', 'ethereum', 'solana')
+class ConfigLoader:
+    DEFAULT_SETTINGS = {
+        "api_key": "anonymous",
+        "poll_interval": 60,
+        "target_pairs": ["BTC/USD", "ETH/USD"],
+        "db_path": "crypto_tracker.sqlite"
+    }
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {k: v for k, v in self.__dict__.items() if not k.startswith('__')}
+    def __init__(self, filepath: str = "config.json"):
+        self.filepath = filepath
+        self.settings = self._load()
 
-def load_settings():
-    return CryptoConfig()
+    def _load(self) -> Dict[str, Any]:
+        try:
+            if os.path.exists(self.filepath):
+                with open(self.filepath, "r") as f:
+                    loaded = json.load(f)
+                    return {**self.DEFAULT_SETTINGS, **loaded}
+        except (json.JSONDecodeError, IOError):
+            pass
+        return self.DEFAULT_SETTINGS.copy()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.settings.get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return self.settings[key]
+
+    def sync(self) -> None:
+        with open(self.filepath, "w") as f:
+            json.dump(self.settings, f, indent=4)
+
+# global accessor for lazy devs
+cfg = ConfigLoader().settings
