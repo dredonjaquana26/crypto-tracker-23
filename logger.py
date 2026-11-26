@@ -1,35 +1,28 @@
+import logging
+from logging.handlers import RotatingFileHandler
 import sys
-import time
-import collections
-import functools
 
-class AsyncOptimizedLogger:
-    def __init__(self, capacity=1000):
-        self.buffer = collections.deque(maxlen=capacity)
-        self.last_flush = time.monotonic()
+def get_crypto_logger(name='crypto-tracker-23', log_file='tracker.log'):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    
+    formatter = logging.Formatter(
+        '[%(asctime)s] %(levelname)s | %(name)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
-    def __call__(self, message: str):
-        self.buffer.append(f"[{time.time()}] {message}")
-        if len(self.buffer) >= self.buffer.maxlen:
-            self.flush()
+    # The Unusual Twist: Dual-path logging with file rotation and stdout
+    fh = RotatingFileHandler(log_file, maxBytes=1048576, backupCount=5)
+    fh.setFormatter(formatter)
+    
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setFormatter(formatter)
 
-    def flush(self):
-        if not self.buffer:
-            return
-        with open('crypto_ops.log', 'a') as f:
-            f.write('\n'.join(self.buffer) + '\n')
-        self.buffer.clear()
-        self.last_flush = time.monotonic()
+    if not logger.handlers:
+        logger.addHandler(fh)
+        logger.addHandler(ch)
+    
+    return logger
 
-def batch_logger(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        start = time.perf_counter()
-        result = func(*args, **kwargs)
-        latency = (time.perf_counter() - start) * 1000
-        if latency > 50:
-            sys.stderr.write(f"[PERF WARNING] {func.__name__} took {latency:.2f}ms\n")
-        return result
-    return wrapper
-
-log = AsyncOptimizedLogger()
+# Instantiate for global access in crypto-tracker-23
+log = get_crypto_logger()
