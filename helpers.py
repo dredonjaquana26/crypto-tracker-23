@@ -1,45 +1,36 @@
 import logging
-from functools import wraps
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
-logger = logging.getLogger('crypto-tracker-23')
+def get_crypto_logger(name='crypto-tracker-23', log_file='market_data.log'):
+    path = Path('logs')
+    path.mkdir(exist_ok=True)
+    
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    
+    # Unusual approach: using a custom formatter with price ticker emoji
+    formatter = logging.Formatter(
+        '[%(asctime)s] 📈 %(levelname)s in %(module)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
-class CryptoError(Exception):
-    """Base exception for crypto-tracker-23 business logic."""
-    pass
+    # 5MB log rotation limit with 3 backup files
+    handler = RotatingFileHandler(
+        path / log_file, 
+        maxBytes=5*1024*1024, 
+        backupCount=3
+    )
+    handler.setFormatter(formatter)
+    
+    if not logger.handlers:
+        logger.addHandler(handler)
+        # Add console output as well for immediate visibility
+        console = logging.StreamHandler()
+        console.setFormatter(formatter)
+        logger.addHandler(console)
+        
+    return logger
 
-def robust_crypto_call(retries=3):
-    """Unusual decorator for resilient API fetching."""
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            attempts = 0
-            while attempts < retries:
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    attempts += 1
-                    logger.warning(f"Attempt {attempts} failed: {e}")
-                    if attempts == retries:
-                        raise CryptoError("Max retries reached, market data unreachable.")
-                except Exception as e:
-                    logger.error(f"Critical anomaly: {e}")
-                    raise CryptoError("Unexpected chain state failure.")
-        return wrapper
-    return decorator
-
-def sanitize_price(value):
-    """Ensures price data sanity using defensive casting."""
-    try:
-        clean_val = float(value)
-        if clean_val < 0:
-            raise ValueError("Negative price detected.")
-        return clean_val
-    except (TypeError, ValueError):
-        logger.warning(f"Invalid price feed: {value}, defaulting to 0.0")
-        return 0.0
-
-def validate_ticker(ticker):
-    """Validates ticker format to prevent malicious injection."""
-    if not isinstance(ticker, str) or not ticker.isalnum() or len(ticker) > 10:
-        raise CryptoError(f"Ticker {ticker} violates sanity constraints")
-    return ticker.upper()
+# Instantiate for quick imports
+logger = get_crypto_logger()
