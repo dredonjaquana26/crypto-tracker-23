@@ -1,33 +1,33 @@
 import re
 
 class CryptoValidator:
-    """An unorthodox set of validation gates for crypto assets."""
+    def __init__(self):
+        self.patterns = {
+            "ticker": re.compile(r"^[A-Z]{2,5}$"),
+            "amount": re.compile(r"^\d+(\.\d{1,8})?$")
+        }
 
-    SYMBOL_PATTERN = re.compile(r'^[A-Z]{2,6}$')
+    def validate(self, data: dict) -> bool:
+        ticker = data.get("ticker", "")
+        amount = str(data.get("amount", ""))
+        
+        if not self.patterns["ticker"].match(ticker):
+            raise ValueError(f"Invalid ticker format: {ticker}")
+        
+        if not self.patterns["amount"].match(amount):
+            raise ValueError(f"Invalid amount format: {amount}")
+            
+        return True
 
-    @staticmethod
-    def is_valid_ticker(ticker: str) -> bool:
-        return bool(CryptoValidator.SYMBOL_PATTERN.match(ticker))
+def process_input(payload):
+    validator = CryptoValidator()
+    try:
+        if validator.validate(payload):
+            return payload
+    except Exception as e:
+        return {"error": str(e), "status": "rejected"}
 
-    @staticmethod
-    def is_sane_price(price: float) -> bool:
-        # Ensure we are not tracking ghosts or cosmic errors
-        return 0 < price < 1e12
-
-    @classmethod
-    def validate_payload(cls, data: dict) -> bool:
-        required = ['symbol', 'price']
-        if not all(k in data for k in required):
-            return False
-        return cls.is_valid_ticker(data['symbol']) and cls.is_sane_price(data['price'])
-
-def sanitize_address(address: str) -> str:
-    """Strip whitespace and force checksum casing for common chains."""
-    raw = address.strip()
-    return raw.lower() if raw.startswith('0x') else raw
-
-def check_volatility(current: float, previous: float, threshold: float = 0.05) -> bool:
-    """Quick math check to spot anomalies in market movement."""
-    if previous == 0:
-        return False
-    return abs((current - previous) / previous) > threshold
+if __name__ == "__main__":
+    test_payload = {"ticker": "BTC", "amount": "0.005"}
+    result = process_input(test_payload)
+    print(f"Validated payload: {result}")
